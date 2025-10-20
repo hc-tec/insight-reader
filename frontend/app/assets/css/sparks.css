@@ -1,0 +1,327 @@
+/**
+ * 火花 (Spark) 样式
+ * 核心设计理念："邀请，而非打扰"
+ */
+
+/* ===== 颜色变量 ===== */
+:root {
+  /* 火花专用颜色 - Emerald（翡翠绿）*/
+  --spark-emerald-50: rgba(16, 185, 129, 0.05);
+  --spark-emerald-100: rgba(16, 185, 129, 0.1);
+  --spark-emerald-300: rgba(16, 185, 129, 0.3);
+  --spark-emerald-500: rgba(16, 185, 129, 0.5);
+  --spark-emerald-700: rgba(16, 185, 129, 0.7);
+  --spark-emerald-900: rgba(16, 185, 129, 0.9);
+  --spark-emerald-solid: rgb(16, 185, 129);
+
+  /* 黄金比例透明度 */
+  --spark-opacity-rest: 0.3;      /* 静止状态 */
+  --spark-opacity-hover: 0.618;   /* 悬停状态（黄金比例）*/
+  --spark-opacity-active: 1.0;    /* 激活状态 */
+
+  /* 动画时长 */
+  --spark-transition-duration: 0.2s;
+  --spark-animation-duration: 0.3s;
+}
+
+/* ===== 基础火花样式 ===== */
+.spark {
+  position: relative;
+  cursor: help;
+  transition: all var(--spark-transition-duration) cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline;
+}
+
+/* ===== 视觉样式变体 ===== */
+
+/* 虚线样式（默认）*/
+.spark-style-dashed {
+  border-bottom: 1px dashed var(--spark-emerald-300);
+}
+
+.spark-style-dashed:hover {
+  border-bottom: 2px solid var(--spark-emerald-700);
+}
+
+/* 实线样式 */
+.spark-style-solid {
+  border-bottom: 1px solid var(--spark-emerald-300);
+}
+
+.spark-style-solid:hover {
+  border-bottom: 2px solid var(--spark-emerald-700);
+}
+
+/* 高亮样式 */
+.spark-style-highlight {
+  background: var(--spark-emerald-50);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.spark-style-highlight:hover {
+  background: var(--spark-emerald-100);
+}
+
+/* ===== 火花类型特定样式 ===== */
+
+/* 概念火花 (Concept Spark) - 🔍 */
+.spark-concept {
+  /* 继承基础样式 */
+}
+
+/* 论证火花 (Argument Spark) - 💡 */
+.spark-argument {
+  padding-right: 24px; /* 为图标预留空间 */
+}
+
+.spark-argument .spark-icon {
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 16px;
+  opacity: 0.5;
+  transition: all var(--spark-transition-duration);
+  pointer-events: none;
+}
+
+.spark-argument:hover .spark-icon {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* 实体火花 (Entity Spark) - 👤/🏢/🌍 */
+.spark-entity {
+  padding-right: 20px; /* 为图标预留空间 */
+}
+
+.spark-entity .spark-icon {
+  position: relative;
+  margin-left: 4px;
+  font-size: 12px;
+  opacity: 0.5;
+  transition: all var(--spark-transition-duration);
+}
+
+.spark-entity:hover .spark-icon {
+  opacity: 1;
+}
+
+/* ===== 交互状态 ===== */
+
+/* 悬停状态 */
+.spark-hover {
+  /* 由类型特定样式处理 */
+}
+
+/* 点击状态 */
+.spark-clicked {
+  animation: spark-flash var(--spark-animation-duration) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ===== 动画 ===== */
+
+/* 火花出现动画 */
+@keyframes spark-appear {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: var(--spark-opacity-rest);
+    transform: translateY(0);
+  }
+}
+
+.spark {
+  animation: spark-appear var(--spark-animation-duration) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* 点击时的"闪烁"动画 */
+@keyframes spark-flash {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(1.05);
+    background: var(--spark-emerald-100);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ===== 火花提示框（可选）===== */
+.spark-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  background: rgba(31, 41, 55, 0.95);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+  z-index: 1000;
+}
+
+.spark:hover .spark-tooltip {
+  opacity: 1;
+}
+
+.spark-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: rgba(31, 41, 55, 0.95);
+}
+
+/* ===== 火花洞察卡片（在右侧面板显示）===== */
+.spark-insight-card {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  animation: slide-in-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.spark-insight-header {
+  padding: 16px 20px;
+  background: linear-gradient(to right, #f9fafb, white);
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spark-insight-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(to br, var(--spark-emerald-solid), #0d9488);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.spark-insight-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.spark-insight-type {
+  padding: 4px 8px;
+  background: var(--spark-emerald-100);
+  color: var(--spark-emerald-solid);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.spark-insight-content {
+  padding: 20px;
+  color: #374151;
+  line-height: 1.8;
+}
+
+/* ===== 响应式设计 ===== */
+@media (max-width: 768px) {
+  .spark-icon {
+    font-size: 14px !important;
+  }
+
+  .spark-tooltip {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+}
+
+/* ===== 深色模式支持（可选）===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --spark-emerald-50: rgba(16, 185, 129, 0.1);
+    --spark-emerald-100: rgba(16, 185, 129, 0.15);
+    --spark-emerald-300: rgba(16, 185, 129, 0.4);
+    --spark-emerald-500: rgba(16, 185, 129, 0.6);
+    --spark-emerald-700: rgba(16, 185, 129, 0.8);
+  }
+
+  .spark-insight-card {
+    background: #1f2937;
+    border-color: #374151;
+    color: #f3f4f6;
+  }
+
+  .spark-insight-header {
+    background: linear-gradient(to right, #111827, #1f2937);
+    border-bottom-color: #374151;
+  }
+
+  .spark-insight-title {
+    color: #f3f4f6;
+  }
+
+  .spark-insight-content {
+    color: #d1d5db;
+  }
+}
+
+/* ===== 可访问性 ===== */
+.spark:focus-visible {
+  outline: 2px solid var(--spark-emerald-solid);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* 减少动画（用户偏好）*/
+@media (prefers-reduced-motion: reduce) {
+  .spark,
+  .spark-icon,
+  .spark-tooltip,
+  .spark-insight-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ===== 打印样式 ===== */
+@media print {
+  .spark {
+    border-bottom: 1px solid #000;
+    background: none;
+  }
+
+  .spark-icon {
+    display: none;
+  }
+
+  .spark-tooltip {
+    display: none;
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat:*)",
+      "Bash(npm install:*)",
+      "Bash(python -m app.db.migrate_to_passwordless)",
+      "Bash(python -m app.test_jwt)",
+      "Bash(python -m app.test_reasoning)",
+      "Bash(npm run type-check)",
+      "Bash(npm.cmd run type-check)",
+      "Bash(npm.cmd run)",
+      "WebSearch",
+      "Bash(python -m app.db.migrate_insight_replay:*)",
+      "Bash(python -m app.db.migrate_analysis_reports:*)",
+      "Bash(dir \"D:\\AIProject\\InsightReader\\backend\")",
+      "Bash(findstr:*)",
+      "Bash(del \"D:\\AIProject\\InsightReader\\frontend\\app\\composables\\useSparkInsight.ts\")",
+      "Bash(del \"D:\\AIProject\\InsightReader\\backend\\test_stanza_analyzer.py\")",
+      "Bash(python -m py_compile:*)",
+      "Bash(netstat:*)",
+      "Bash(curl:*)",
+      "Bash(python -m json.tool:*)",
+      "Read(//d/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

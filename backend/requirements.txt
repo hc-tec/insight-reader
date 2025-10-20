@@ -1,0 +1,29 @@
+# FastAPI 核心
+fastapi==0.110.0
+uvicorn[standard]==0.27.0
+pydantic==2.6.0
+pydantic-settings==2.2.1
+
+# 数据库
+sqlalchemy==2.0.25
+
+# JWT 认证
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.9
+
+# OAuth 社交登录
+authlib==1.3.0
+httpx==0.27.0
+
+# 邮件发送（魔法链接）
+fastapi-mail==1.4.1
+
+# AI SDK
+openai==1.54.0
+
+# SSE 支持
+sse-starlette==2.0.0
+
+# 工具
+python-dotenv==1.0.0
+itsdangerous==2.1.2
