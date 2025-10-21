@@ -49,10 +49,6 @@ export const useSparkRendererV2 = () => {
   // 火花分组数据
   const sparkGroups = ref<Map<number, SentenceSparks>>(new Map())
 
-  // 当前选中的句子
-  const selectedSentenceIndex = ref<number | null>(null)
-  const showSidebar = ref(false)
-
   /**
    * 渲染所有火花
    */
@@ -169,13 +165,26 @@ export const useSparkRendererV2 = () => {
         // 添加到句子末尾
         sentenceEl.appendChild(badge)
 
-        // 添加点击事件
+        // 生成tooltip内容
+        const tooltipContent = generateTooltipContent(group)
+        sentenceEl.setAttribute('data-spark-tooltip', tooltipContent)
+
+        // 添加点击事件来切换tooltip显示
         sentenceEl.addEventListener('click', (e) => {
           e.stopPropagation()
-          handleSentenceClick(sentenceIndex)
+
+          // 关闭其他所有tooltip
+          document.querySelectorAll('.has-sparks.show-tooltip').forEach(el => {
+            if (el !== sentenceEl) {
+              el.classList.remove('show-tooltip')
+            }
+          })
+
+          // 切换当前tooltip
+          sentenceEl.classList.toggle('show-tooltip')
         })
 
-        // 添加悬停效果
+        // 添加悬停效果（仅视觉反馈，不显示tooltip）
         sentenceEl.addEventListener('mouseenter', () => {
           sentenceEl.classList.add('spark-hover')
         })
@@ -191,6 +200,9 @@ export const useSparkRendererV2 = () => {
 
     // 添加全局样式
     injectStyles()
+
+    // 添加全局点击事件，点击其他地方时关闭tooltip
+    setupGlobalClickHandler()
   }
 
   /**
@@ -213,39 +225,37 @@ export const useSparkRendererV2 = () => {
 
     badge.innerHTML = `
       <span class="spark-icon">${icon}</span>
-      <span class="spark-count">${group.totalCount}</span>
     `
+    // <span class="spark-count">${group.totalCount}</span>
 
     return badge
   }
 
   /**
-   * 处理句子点击
+   * 生成Tooltip内容
    */
-  const handleSentenceClick = (sentenceIndex: number) => {
-    selectedSentenceIndex.value = sentenceIndex
-    showSidebar.value = true
+  const generateTooltipContent = (group: SentenceSparks): string => {
+    const parts: string[] = []
 
-    console.log(`🖱️ 点击句子 ${sentenceIndex}，展示 ${sparkGroups.value.get(sentenceIndex)?.totalCount} 个火花`)
-  }
-
-  /**
-   * 关闭侧边栏
-   */
-  const closeSidebar = () => {
-    showSidebar.value = false
-    selectedSentenceIndex.value = null
-  }
-
-  /**
-   * 获取当前选中句子的火花
-   */
-  const getSelectedSparks = computed(() => {
-    if (selectedSentenceIndex.value === null) {
-      return null
+    // 添加概念火花
+    if (group.concepts.length > 0) {
+      const conceptTexts = group.concepts.map(c =>
+        `💡 ${c.text} (重要度: ${c.importance_score}/10) - ${c.explanation_hint}`
+      )
+      parts.push(...conceptTexts)
     }
-    return sparkGroups.value.get(selectedSentenceIndex.value) || null
-  })
+
+    // 添加论证火花
+    if (group.arguments.length > 0) {
+      const argTexts = group.arguments.map(a => {
+        const icon = a.type === 'claim' ? '📝' : a.type === 'evidence' ? '📊' : '🔄'
+        return `${icon} ${a.role_description}`
+      })
+      parts.push(...argTexts)
+    }
+
+    return parts.join(' | ')
+  }
 
   /**
    * 注入样式
@@ -272,25 +282,25 @@ export const useSparkRendererV2 = () => {
       }
 
       /* 火花徽章 */
-      .spark-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 2px;
-        padding: 1px 6px;
-        margin-left: 4px;
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-        border-radius: 10px;
-        font-size: 11px;
-        font-weight: 600;
-        color: white;
-        box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
-        animation: badge-appear 0.4s ease-out;
-        vertical-align: middle;
-        white-space: nowrap;
-      }
+      // .spark-badge {
+      //   display: inline-flex;
+      //   align-items: center;
+      //   gap: 2px;
+      //   padding: 1px 6px;
+      //   margin-left: 4px;
+      //   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      //   border-radius: 10px;
+      //   font-size: 11px;
+      //   font-weight: 600;
+      //   color: white;
+      //   box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+      //   animation: badge-appear 0.4s ease-out;
+      //   vertical-align: middle;
+      //   white-space: nowrap;
+      // }
 
       .spark-icon {
-        font-size: 10px;
+        font-size: 15px;
         line-height: 1;
       }
 
@@ -329,12 +339,34 @@ export const useSparkRendererV2 = () => {
     document.head.appendChild(style)
   }
 
+  /**
+   * 设置全局点击处理器，点击其他地方关闭tooltip
+   */
+  const setupGlobalClickHandler = () => {
+    // 移除旧的监听器（如果存在）
+    if ((window as any).__sparkTooltipClickHandler) {
+      document.removeEventListener('click', (window as any).__sparkTooltipClickHandler)
+    }
+
+    // 创建新的监听器
+    const handler = (e: Event) => {
+      const target = e.target as HTMLElement
+
+      // 如果点击的不是火花句子，关闭所有tooltip
+      if (!target.closest('.has-sparks')) {
+        document.querySelectorAll('.has-sparks.show-tooltip').forEach(el => {
+          el.classList.remove('show-tooltip')
+        })
+      }
+    }
+
+    // 保存引用并添加监听器
+    (window as any).__sparkTooltipClickHandler = handler
+    document.addEventListener('click', handler)
+  }
+
   return {
     renderSparks,
-    showSidebar,
-    selectedSentenceIndex,
-    getSelectedSparks,
-    closeSidebar,
     sparkGroups
   }
 }

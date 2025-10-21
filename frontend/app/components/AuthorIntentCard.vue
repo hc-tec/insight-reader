@@ -8,11 +8,11 @@
   >
     <!-- 意图标签 -->
     <div class="flex items-center gap-2 mb-3">
-      <span :class="['px-3 py-1.5 text-xs font-medium rounded-full', intentBadgeClass]">
+      <span :class="['px-3 py-1.5 text-sm font-medium rounded-full', intentBadgeClass]">
         {{ intentLabel }}
       </span>
-      <div class="flex items-center gap-1 text-xs text-gray-500">
-        <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+      <div class="flex items-center gap-1 text-sm text-gray-500">
+        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd" />
         </svg>
         <span>{{ Math.round(authorIntent.confidence * 100) }}% 置信度</span>
@@ -20,25 +20,27 @@
     </div>
 
     <!-- 描述 -->
-    <p class="text-sm text-gray-700 leading-relaxed mb-3">
+    <p class="text-base text-gray-700 leading-relaxed mb-3">
       {{ authorIntent.description }}
     </p>
 
     <!-- 识别依据 -->
     <div v-if="authorIntent.indicators && authorIntent.indicators.length > 0" class="mt-3">
       <div class="flex items-center gap-1 mb-2">
-        <svg class="w-3 h-3 text-violet-600" fill="currentColor" viewBox="0 0 20 20">
+        <svg class="w-4 h-4 text-violet-600" fill="currentColor" viewBox="0 0 20 20">
           <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
         </svg>
-        <span class="text-xs font-medium text-gray-600">识别依据</span>
+        <span class="text-sm font-medium text-gray-600">识别依据</span>
       </div>
       <ul class="space-y-1.5">
         <li
           v-for="(indicator, index) in authorIntent.indicators"
           :key="index"
-          class="text-xs text-gray-600 flex items-start gap-2"
+          class="text-sm text-gray-600 flex items-start gap-2"
         >
-          <span class="text-violet-500 mt-0.5 flex-shrink-0">•</span>
+          <svg class="w-2 h-2 text-violet-500 mt-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 8 8">
+            <circle cx="4" cy="4" r="3" />
+          </svg>
           <span>{{ indicator }}</span>
         </li>
       </ul>
@@ -46,7 +48,7 @@
 
     <!-- 意图说明 -->
     <div class="mt-4 p-3 bg-violet-50/50 rounded-lg border border-violet-200/50">
-      <p class="text-xs text-violet-800">
+      <p class="text-sm text-violet-800">
         <strong>{{ intentLabel }}</strong>: {{ intentExplanation }}
       </p>
     </div>

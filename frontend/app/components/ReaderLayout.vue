@@ -28,36 +28,20 @@
         </div>
       </div>
     </transition>
-
-    <!-- 折叠/展开按钮 -->
-    <button
-      @click="togglePanel"
-      class="fixed right-4 bottom-8 z-50 p-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-200 group"
-      :class="{ 'right-[600px]': isExpanded }"
-      :title="isExpanded ? '收起AI洞察' : '展开AI洞察'"
-    >
-      <svg
-        class="w-5 h-5 transition-transform duration-200"
-        :class="{ 'rotate-180': !isExpanded }"
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-      </svg>
-      <span class="absolute right-full mr-3 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-gray-900 text-white text-sm rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
-        {{ isExpanded ? '收起AI洞察' : '展开AI洞察' }}
-      </span>
-    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-const isExpanded = ref(true)
+const isExpanded = ref(false)
 
 const togglePanel = () => {
   isExpanded.value = !isExpanded.value
 }
+
+// 暴露方法给父组件
+defineExpose({
+  togglePanel
+})
 </script>
 
 <style scoped>

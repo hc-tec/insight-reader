@@ -255,6 +255,7 @@ export const useThinkingLens = () => {
     const span = document.createElement('span')
     span.className = 'meta-view-highlight'
     span.dataset.category = highlight.category
+    span.dataset.tooltip = highlight.tooltip // 存储tooltip内容供shadcn/ui使用
     if (lensType) {
       span.dataset.lensType = lensType
     }
@@ -264,7 +265,6 @@ export const useThinkingLens = () => {
     span.style.padding = '0.1em 0.2em'
     span.style.borderRadius = '0.25em'
     span.style.transition = 'all 0.2s ease'
-    span.title = highlight.tooltip
     span.textContent = text
 
     // 悬停效果

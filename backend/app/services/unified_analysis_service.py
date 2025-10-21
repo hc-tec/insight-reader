@@ -9,6 +9,7 @@ from app.config import settings
 from app.utils.sentence_splitter import split_sentences
 from app.utils.error_logger import log_llm_error
 import json
+import json_repair
 import re
 import time
 from typing import List, Dict, Optional
@@ -88,9 +89,11 @@ class UnifiedAnalysisService:
 
         # 4. 解析响应
         try:
-            report_json = json.loads(response.choices[0].message.content)
-            print("✅ LLM 响应解析成功")
-        except json.JSONDecodeError as e:
+            # 先尝试使用json_repair修复可能的JSON格式错误
+            raw_content = response.choices[0].message.content
+            report_json = json_repair.repair_json(raw_content, return_objects=True, ensure_ascii=False)
+            print("✅ JSON解析成功（使用json_repair）")
+        except Exception as e:
             # 记录JSON解析错误
             log_llm_error(
                 service_name="unified_analysis",

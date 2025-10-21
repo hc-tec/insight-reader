@@ -108,9 +108,9 @@
               <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span class="text-xs font-medium text-gray-600">分析信息</span>
+              <span class="text-sm font-medium text-gray-600">分析信息</span>
             </div>
-            <div class="space-y-1 text-xs text-gray-500">
+            <div class="space-y-1 text-sm text-gray-500">
               <p>模型: {{ metaAnalysisData.analysis_quality.llm_model }}</p>
               <p>耗时: {{ metaAnalysisData.analysis_quality.processing_time_ms }}ms</p>
               <p>置信度: {{ Math.round(metaAnalysisData.analysis_quality.confidence_score * 100) }}%</p>

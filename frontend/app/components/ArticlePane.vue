@@ -8,7 +8,10 @@
         <span class="text-xs font-medium text-emerald-700">正在阅读</span>
       </div>
 
-      <h1 class="text-5xl font-bold text-gray-900 leading-tight mb-6 tracking-tight">
+      <h1
+        class="text-5xl font-bold text-gray-900 leading-tight mb-6 tracking-tight"
+        :style="{ fontFamily: readingSettings.fontFamily }"
+      >
         {{ title }}
       </h1>
 
@@ -113,6 +116,31 @@
               </div>
             </div>
 
+            <!-- 单句成行开关 -->
+            <div>
+              <label class="flex items-center justify-between cursor-pointer group">
+                <div class="flex items-center gap-3">
+                  <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                  <div>
+                    <span class="text-sm font-medium text-gray-700">单句成行</span>
+                    <p class="text-xs text-gray-500">每个句子独立显示为一行</p>
+                  </div>
+                </div>
+                <div class="relative">
+                  <input
+                    type="checkbox"
+                    :checked="readingSettings.singleSentencePerLine"
+                    @change="toggleSingleSentencePerLine"
+                    class="sr-only peer"
+                  />
+                  <div class="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:bg-emerald-600 transition-colors"></div>
+                  <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-5"></div>
+                </div>
+              </label>
+            </div>
+
             <!-- 操作按钮 -->
             <div class="flex items-center justify-between pt-2">
               <button
@@ -141,7 +169,10 @@
       <div
         id="article-content-container"
         ref="articleContentRef"
-        class="article-content select-text"
+        :class="[
+          'article-content select-text',
+          { 'single-sentence-per-line': readingSettings.singleSentencePerLine }
+        ]"
         :style="{
           fontFamily: readingSettings.fontFamily,
           fontSize: readingSettings.fontSize,
@@ -199,7 +230,8 @@ const {
   getFontOptions,
   getFontSizeOptions,
   getCurrentFontKey,
-  getCurrentSizeKey
+  getCurrentSizeKey,
+  toggleSingleSentencePerLine
 } = useReadingSettings()
 
 // DOM 引用
@@ -322,6 +354,18 @@ const handleMouseUp = () => {
   margin-top: 0;
   margin-bottom: 1em;
   line-height: 2;
+  text-indent: 2em;
+}
+
+/* 单句成行模式 */
+.single-sentence-per-line :deep(.article-sentence) {
+  display: block;
+  margin-bottom: 0.8em;
+  text-indent: 0;
+}
+
+.single-sentence-per-line :deep(p) {
+  text-indent: 0;
 }
 
 .article-content :deep(a) {
@@ -438,6 +482,68 @@ const handleMouseUp = () => {
 .article-content :deep(.meta-view-highlight:hover) {
   filter: brightness(0.95);
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Tooltip样式 - 使用data-tooltip属性 */
+.article-content :deep(.meta-view-highlight[data-tooltip])::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  padding: 0.75rem 1rem;
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: normal;
+  max-width: 300px;
+  min-width: 200px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 50;
+  text-indent: 0; /* 重置首行缩进 */
+}
+
+.article-content :deep(.meta-view-highlight[data-tooltip]:hover)::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+/* 火花洞察Tooltip样式 - 点击触发 */
+.article-content :deep(.has-sparks[data-spark-tooltip])::before {
+  content: attr(data-spark-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-8px);
+  padding: 0.75rem 1rem;
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: normal;
+  max-width: 400px;
+  min-width: 250px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 50;
+  text-indent: 0; /* 重置首行缩进 */
+}
+
+/* 点击后显示tooltip */
+.article-content :deep(.has-sparks.show-tooltip[data-spark-tooltip])::before {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-4px);
+  pointer-events: auto;
 }
 
 /* 论证结构透镜的高亮样式 */

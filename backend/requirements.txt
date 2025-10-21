@@ -21,6 +21,9 @@ fastapi-mail==1.4.1
 # AI SDK
 openai==1.54.0
 
+# JSON修复（用于修复LLM返回的格式错误JSON）
+json-repair==0.52.2
+
 # SSE 支持
 sse-starlette==2.0.0
 

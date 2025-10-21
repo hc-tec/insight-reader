@@ -183,7 +183,7 @@ export const useArticleRenderer = () => {
     let resultHtml = ''
 
     paragraphs.forEach(paragraph => {
-      resultHtml += `<p data-paragraph-index="${paragraph.index}">`
+      resultHtml += `<p data-paragraph-index="${paragraph.index}" class="article-paragraph">`
 
       paragraph.sentences.forEach(sentence => {
         resultHtml += `<span id="sentence-${sentence.index}" data-sentence-index="${sentence.index}" class="article-sentence">${escapeHtml(sentence.text)}</span>`

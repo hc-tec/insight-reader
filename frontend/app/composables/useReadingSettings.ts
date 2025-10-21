@@ -8,6 +8,7 @@ export interface ReadingSettings {
   fontFamily: string
   fontSize: string
   lineHeight: string
+  singleSentencePerLine: boolean
 }
 
 const FONT_FAMILIES = {
@@ -16,7 +17,7 @@ const FONT_FAMILIES = {
   songti: '"Songti SC", "SimSun", "宋体", serif',
   heiti: '"Heiti SC", "SimHei", "黑体", sans-serif',
   kaiti: '"Kaiti SC", "KaiTi", "楷体", serif',
-  cangErJinKai: '"仓耳今楷01 W03", "仓耳今楷", "Cang Er Jin Kai", "KaiTi", "楷体", serif',
+  cangErJinKai: '"TsangerJinKai03", "KaiTi", "楷体", serif',
 }
 
 const FONT_SIZES = {
@@ -41,6 +42,7 @@ export const useReadingSettings = () => {
     fontFamily: FONT_FAMILIES.cangErJinKai,
     fontSize: FONT_SIZES.medium,
     lineHeight: LINE_HEIGHTS.medium,
+    singleSentencePerLine: false,
   }
 
   // 从 localStorage 加载设置
@@ -125,6 +127,15 @@ export const useReadingSettings = () => {
     return entry ? entry[0] : 'medium'
   }
 
+  // 切换单句成行
+  const toggleSingleSentencePerLine = () => {
+    settings.value = {
+      ...settings.value,
+      singleSentencePerLine: !settings.value.singleSentencePerLine
+    }
+    saveSettings(settings.value)
+  }
+
   return {
     settings: readonly(settings),
     setFontFamily,
@@ -134,5 +145,6 @@ export const useReadingSettings = () => {
     getFontSizeOptions,
     getCurrentFontKey,
     getCurrentSizeKey,
+    toggleSingleSentencePerLine,
   }
 }

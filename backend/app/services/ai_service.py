@@ -51,7 +51,9 @@ class AIService:
         intent: str,
         custom_question: str | None = None,
         use_reasoning: bool = False,
-        custom_prompt: str | None = None
+        custom_prompt: str | None = None,
+        include_full_text: bool = False,
+        full_text: str | None = None
     ):
         """
         流式生成洞察
@@ -63,6 +65,8 @@ class AIService:
             custom_question: 自定义问题(可选)
             use_reasoning: 是否使用推理模型
             custom_prompt: 自定义 prompt (用于火花洞察等特殊场景)
+            include_full_text: 是否附带全文
+            full_text: 完整文章内容(可选)
 
         Yields:
             str | dict: AI 生成的文本片段或包含推理内容的字典
@@ -82,7 +86,9 @@ class AIService:
                 intent=intent,
                 selected_text=selected_text,
                 context=context,
-                custom_question=custom_question
+                custom_question=custom_question,
+                include_full_text=include_full_text,
+                full_text=full_text
             )
 
         # 调用 OpenAI API (流式)

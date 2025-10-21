@@ -20,7 +20,10 @@
       "Bash(netstat:*)",
       "Bash(curl:*)",
       "Bash(python -m json.tool:*)",
-      "Read(//d/**)"
+      "Read(//d/**)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:pypi.org)",
+      "Bash(mkdir:*)"
     ],
     "deny": [],
     "ask": []

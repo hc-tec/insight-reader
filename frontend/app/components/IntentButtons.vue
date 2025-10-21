@@ -82,6 +82,29 @@
             </button>
           </div>
 
+          <!-- 附带全文开关 -->
+          <div class="px-4 pb-3 border-b border-gray-100">
+            <label class="flex items-center justify-between cursor-pointer group">
+              <div class="flex items-center space-x-2">
+                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <div>
+                  <span class="text-sm font-medium text-gray-700">附带全文</span>
+                  <p class="text-xs text-gray-500">AI将参考整篇文章内容</p>
+                </div>
+              </div>
+              <div class="relative">
+                <input
+                  v-model="includeFullText"
+                  type="checkbox"
+                  class="sr-only peer"
+                />
+                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </div>
+            </label>
+          </div>
+
           <!-- 自定义问题输入 -->
           <div class="px-4 pb-4">
             <div class="pt-3 border-t border-gray-100">
@@ -157,7 +180,7 @@ const props = defineProps<Props>()
 
 // Emits
 const emit = defineEmits<{
-  select: [intent: Intent, customQuestion?: string]
+  select: [intent: Intent, customQuestion?: string, includeFullText?: boolean]
   close: []
 }>()
 
@@ -165,6 +188,7 @@ const emit = defineEmits<{
 const customQuestion = ref('')
 const customInput = ref<HTMLInputElement | null>(null)
 const popupRef = ref<HTMLElement | null>(null)
+const includeFullText = ref(false)
 
 // 是否显示在选中文字上方
 const isAbove = ref(false)
@@ -268,14 +292,14 @@ const intents = [
 
 // 处理意图选择
 const handleSelect = (intent: Intent) => {
-  emit('select', intent)
+  emit('select', intent, undefined, includeFullText.value)
   customQuestion.value = ''
 }
 
 // 处理自定义问题
 const handleCustomQuestion = () => {
   if (customQuestion.value.trim()) {
-    emit('select', 'custom', customQuestion.value)
+    emit('select', 'custom', customQuestion.value, includeFullText.value)
     customQuestion.value = ''
   }
 }

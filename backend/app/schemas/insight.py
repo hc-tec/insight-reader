@@ -19,8 +19,8 @@ class InsightRequest(BaseModel):
     )
     intent: str = Field(
         ...,
-        pattern="^(explain|analyze|counter)$",
-        description="用户意图: explain(解释) | analyze(分析) | counter(反驳)"
+        pattern="^(explain|analyze|counter|custom)$",
+        description="用户意图: explain(解释) | analyze(分析) | counter(反驳) | custom(自定义)"
     )
     custom_question: str | None = Field(
         None,
@@ -31,6 +31,15 @@ class InsightRequest(BaseModel):
         False,
         description="是否使用推理模型（支持思维链）"
     )
+    include_full_text: bool = Field(
+        False,
+        description="是否附带全文内容（用于更深入的分析）"
+    )
+    full_text: str | None = Field(
+        None,
+        max_length=50000,
+        description="完整文章内容（当include_full_text为true时提供）"
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -39,7 +48,8 @@ class InsightRequest(BaseModel):
                     "selected_text": "康德的绝对命令",
                     "context": "在伦理学中，康德的绝对命令是一个核心概念。它要求我们的行为准则能够成为普遍法则。",
                     "intent": "explain",
-                    "use_reasoning": False
+                    "use_reasoning": False,
+                    "include_full_text": False
                 }
             ]
         }

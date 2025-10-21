@@ -10,6 +10,7 @@ from app.config import settings
 from app.utils.sentence_splitter import split_sentences
 from app.utils.error_logger import log_llm_error
 import json
+import json_repair
 from typing import Dict, List, Optional
 import logging
 
@@ -123,27 +124,25 @@ class ThinkingLensService:
 
 # 标注规则
 
-- 每个标注必须包含：起始位置、结束位置、文本片段、类别、提示信息
-- 位置是字符级偏移量（从0开始）
+- 每个标注必须包含：句子编号、文本片段、类别、提示信息
+- 使用句子列表中的编号（从0开始）定位句子
 - 主张和证据要形成逻辑对应关系
-- 避免标注过短（<10字符）或过长（>200字符）的片段
-- 标注要准确，避免重叠
+- 避免标注过短或无意义的句子
+- 标注要准确，每个句子只标注一次
 
 # 输出格式
 
 {
   "highlights": [
     {
-      "start": 50,
-      "end": 120,
+      "sentence_index": 5,
       "text": "深度学习是机器学习的一个重要分支",
       "category": "claim",
       "color": "#dbeafe",
       "tooltip": "核心主张：定义深度学习"
     },
     {
-      "start": 150,
-      "end": 250,
+      "sentence_index": 7,
       "text": "研究表明，深度神经网络在图像识别任务上达到了超越人类的准确率",
       "category": "evidence",
       "color": "#d1fae5",
@@ -166,10 +165,11 @@ class ThinkingLensService:
 }
 
 注意：
-- highlights数组中每个对象的start和end必须精确对应原文位置
+- highlights数组中每个对象必须包含sentence_index字段
+- sentence_index是句子列表中的编号（从0开始）
 - category只能是"claim"或"evidence"
 - color固定为: claim="#dbeafe", evidence="#d1fae5"
-- 所有文本片段必须与原文完全一致"""
+- 所有文本片段必须与句子列表中的原文完全一致"""
 
         user_prompt = f"""请分析以下文章的论证结构，标注出核心主张和支撑证据：
 
@@ -211,16 +211,14 @@ class ThinkingLensService:
 {
   "highlights": [
     {
-      "start": 100,
-      "end": 180,
+      "sentence_index": 10,
       "text": "我认为这项技术将彻底改变我们的生活方式",
       "category": "subjective",
       "color": "#fef3c7",
       "tooltip": "主观判断：个人观点"
     },
     {
-      "start": 200,
-      "end": 280,
+      "sentence_index": 12,
       "text": "根据2024年的统计数据，该技术的市场份额增长了35%",
       "category": "objective",
       "color": "#e2e8f0",
@@ -244,9 +242,11 @@ class ThinkingLensService:
 }
 
 注意：
+- highlights数组中每个对象必须包含sentence_index字段
+- sentence_index是句子列表中的编号（从0开始）
 - category只能是"subjective"、"objective"或"irony"
 - color固定为: subjective="#fef3c7", objective="#e2e8f0", irony="#fde68a"
-- 所有文本片段必须与原文完全一致"""
+- 所有文本片段必须与句子列表中的原文完全一致"""
 
         user_prompt = f"""请分析以下文章的作者立场，标注出主观表达和客观陈述：
 
@@ -292,8 +292,11 @@ class ThinkingLensService:
 
         # 解析响应
         try:
-            result = json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError as e:
+            # 先尝试使用json_repair修复可能的JSON格式错误
+            raw_content = response.choices[0].message.content
+            result = json_repair.repair_json(raw_content, return_objects=True, ensure_ascii=False)
+            logger.info("✅ JSON解析成功（使用json_repair）")
+        except Exception as e:
             # 记录JSON解析错误
             log_llm_error(
                 service_name="thinking_lens",
@@ -312,10 +315,11 @@ class ThinkingLensService:
         return result
 
     def _validate_lens_result(self, result: Dict):
-        """验证透镜分析结果"""
+        """验证透镜分析结果，并为缺失字段提供默认值"""
 
         if 'highlights' not in result or not isinstance(result['highlights'], list):
-            raise ValueError("LLM 输出缺少 highlights 字段或格式错误")
+            logger.warning("LLM 输出缺少 highlights 字段或格式错误，使用空数组")
+            result['highlights'] = []
 
         if 'annotations' not in result:
             logger.warning("LLM 输出缺少 annotations 字段，使用默认值")
@@ -325,16 +329,69 @@ class ThinkingLensService:
                 "statistics": {}
             }
 
-        # 验证每个高亮
+        # 验证并修复每个高亮
+        valid_highlights = []
         for idx, highlight in enumerate(result['highlights']):
-            required_fields = ['start', 'end', 'text', 'category', 'color', 'tooltip']
-            for field in required_fields:
-                if field not in highlight:
-                    raise ValueError(f"高亮 {idx} 缺少必需字段: {field}")
+            # 检查必需字段，提供默认值
+            if 'sentence_index' not in highlight:
+                if 'start' in highlight:
+                    # 如果有start字段，使用0作为默认sentence_index
+                    highlight['sentence_index'] = 0
+                    logger.warning(f"高亮 {idx} 缺少 sentence_index，使用默认值 0")
+                else:
+                    logger.warning(f"高亮 {idx} 缺少 sentence_index 且无法推断，跳过此高亮")
+                    continue
 
-            # 验证位置
-            if highlight['start'] >= highlight['end']:
-                raise ValueError(f"高亮 {idx} 的起始位置必须小于结束位置")
+            if 'text' not in highlight or not highlight['text']:
+                logger.warning(f"高亮 {idx} 缺少 text 字段，跳过此高亮")
+                continue
+
+            if 'category' not in highlight:
+                logger.warning(f"高亮 {idx} 缺少 category 字段，使用默认值 'claim'")
+                highlight['category'] = 'claim'
+
+            if 'color' not in highlight:
+                # 根据category提供默认颜色
+                default_colors = {
+                    'claim': '#dbeafe',
+                    'evidence': '#d1fae5',
+                    'subjective': '#fef3c7',
+                    'objective': '#e2e8f0',
+                    'irony': '#fde68a'
+                }
+                highlight['color'] = default_colors.get(highlight['category'], '#e5e7eb')
+                logger.warning(f"高亮 {idx} 缺少 color 字段，使用默认颜色 {highlight['color']}")
+
+            if 'tooltip' not in highlight or not highlight['tooltip']:
+                # 根据category提供默认tooltip
+                default_tooltips = {
+                    'claim': '核心主张',
+                    'evidence': '支撑证据',
+                    'subjective': '主观表达',
+                    'objective': '客观陈述',
+                    'irony': '反讽/讽刺'
+                }
+                highlight['tooltip'] = default_tooltips.get(highlight['category'], '标注内容')
+                logger.warning(f"高亮 {idx} 缺少 tooltip 字段，使用默认值 '{highlight['tooltip']}'")
+
+            # 验证sentence_index是数字
+            if not isinstance(highlight['sentence_index'], int):
+                try:
+                    highlight['sentence_index'] = int(highlight['sentence_index'])
+                except:
+                    logger.warning(f"高亮 {idx} 的sentence_index无法转换为整数，跳过此高亮")
+                    continue
+
+            if highlight['sentence_index'] < 0:
+                logger.warning(f"高亮 {idx} 的sentence_index为负数，调整为0")
+                highlight['sentence_index'] = 0
+
+            # 通过所有验证，添加到有效列表
+            valid_highlights.append(highlight)
+
+        # 更新为过滤后的有效高亮列表
+        result['highlights'] = valid_highlights
+        logger.info(f"验证完成: 原始高亮数={len(result.get('highlights', []))}, 有效高亮数={len(valid_highlights)}")
 
     def _format_response(self, lens_result: ThinkingLensResult) -> Dict:
         """格式化响应"""

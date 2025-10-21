@@ -47,7 +47,9 @@ async def generate_insight(request: InsightRequest):
                 context=request.context,
                 intent=request.intent,
                 custom_question=request.custom_question,
-                use_reasoning=request.use_reasoning
+                use_reasoning=request.use_reasoning,
+                include_full_text=request.include_full_text,
+                full_text=request.full_text
             ):
                 # chunk 可能包含 content 或 reasoning_content
                 if isinstance(chunk, dict):

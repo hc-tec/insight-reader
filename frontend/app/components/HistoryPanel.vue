@@ -1,21 +1,5 @@
 <template>
   <div>
-    <!-- 历史记录按钮 -->
-    <Button
-      variant="outline"
-      size="sm"
-      @click="isOpen = true"
-      class="fixed bottom-6 right-6 shadow-lg z-40"
-    >
-      <svg class="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      历史记录
-      <span v-if="history.length > 0" class="ml-2 px-2 py-0.5 bg-blue-100 text-blue-600 text-xs rounded-full">
-        {{ history.length }}
-      </span>
-    </Button>
-
     <!-- 历史记录侧边栏 -->
     <Transition name="slide">
       <div
@@ -37,7 +21,7 @@
             <Button
               variant="ghost"
               size="sm"
-              @click="isOpen = false"
+              @click="emit('close')"
             >
               <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -120,7 +104,7 @@
       <div
         v-if="isOpen"
         class="fixed inset-0 bg-black bg-opacity-30 z-40"
-        @click="isOpen = false"
+        @click="emit('close')"
       />
     </Transition>
   </div>
@@ -130,12 +114,16 @@
 import type { HistoryItem } from '~/types/history'
 import type { Intent } from '~/types/insight'
 
+const props = defineProps<{
+  isOpen: boolean
+}>()
+
 const { history, deleteHistoryItem, clearHistory, searchHistory } = useHistory()
-const isOpen = ref(false)
 const searchKeyword = ref('')
 
 const emit = defineEmits<{
   select: [item: HistoryItem]
+  close: []
 }>()
 
 // 过滤后的历史记录
@@ -195,7 +183,7 @@ const getIntentLabel = (intent: Intent) => {
 // 选择历史记录项
 const handleSelectItem = (item: HistoryItem) => {
   emit('select', item)
-  isOpen.value = false
+  emit('close')
 }
 
 // 清空所有记录

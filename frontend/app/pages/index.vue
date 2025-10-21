@@ -18,18 +18,14 @@
       />
 
       <!-- 阅读界面：双栏布局 -->
-      <ReaderLayout v-else>
+      <ReaderLayout
+        v-else
+        ref="readerLayoutRef"
+      >
       <template #left>
         <ArticlePane
           :content="content"
           :title="title"
-        />
-
-        <!-- 元视角触发器 -->
-        <MetaViewTrigger
-          v-if="isReading"
-          :article-title="title"
-          :article-content="content"
         />
 
         <!-- 元视角信息面板 -->
@@ -117,13 +113,26 @@
       @close="clearSelection"
     />
 
-    <!-- 历史记录面板 -->
-    <HistoryPanel @select="handleHistorySelect" />
+    <!-- 历史记录面板（只保留侧边栏，按钮已整合到FloatingActions） -->
+    <HistoryPanel
+      :is-open="isHistoryPanelOpen"
+      @close="isHistoryPanelOpen = false"
+      @select="handleHistorySelect"
+    />
 
-    <!-- 洞察回放按钮 -->
-    <InsightReplayButton
-      v-if="isReading && insightHistory.length > 0"
+    <!-- 统一的悬浮按钮组 -->
+    <FloatingActions
+      v-if="isReading"
+      :is-insight-panel-expanded="isInsightPanelExpanded"
       :insight-count="insightHistory.length"
+      :is-replay-mode="isReplayMode"
+      :history-count="history.length"
+      :is-meta-view-active="isMetaViewActive"
+      :is-meta-analyzing="isMetaAnalyzing"
+      @toggle-insight-panel="toggleInsightPanel"
+      @toggle-replay="handleToggleReplay"
+      @open-history="isHistoryPanelOpen = true"
+      @toggle-meta-view="handleToggleMetaView"
     />
 
     <!-- 洞察详情弹窗 -->
@@ -133,15 +142,7 @@
       @continue-chat="handleContinueChat"
     />
 
-    <!-- 火花侧边栏 -->
-    <SparkSidebar
-      :show="showSidebar"
-      :sentence-index="selectedSentenceIndex"
-      :selected-sentence="getSelectedSparks?.sentence_text || ''"
-      :concept-sparks="getSelectedSparks?.concepts || []"
-      :argument-sparks="getSelectedSparks?.arguments || []"
-      @close="closeSidebar"
-    />
+    <!-- 火花洞察现在使用Tooltip显示，不再需要侧边栏 -->
 
     <!-- 分析设置对话框 -->
     <AnalysisSettingsModal
@@ -195,8 +196,28 @@ const {
   selectedHistoryItem,
   loadInsightHistory,
   clearReplayState,
-  selectHistoryItem
+  selectHistoryItem,
+  isReplayMode,
+  toggleReplayMode,
+  renderHistoryHighlights,
+  removeHistoryHighlights
 } = useInsightReplay()
+
+// 历史记录相关
+const { history } = useHistory()
+
+// 元视角相关
+const {
+  isMetaViewActive,
+  isAnalyzing: isMetaAnalyzing,
+  analyzeArticle,
+  toggleMetaView
+} = useMetaView()
+
+// UI状态
+const isHistoryPanelOpen = ref(false)
+const isInsightPanelExpanded = ref(false)
+const readerLayoutRef = ref(null)
 
 // 分析偏好设置
 const { fetchPreferences } = useAnalysisPreferences()
@@ -211,10 +232,6 @@ const { user } = useAuth()
 const { connect, disconnect, onAnalysisComplete } = useAnalysisNotifications()
 const {
   renderSparks,
-  showSidebar,
-  selectedSentenceIndex,
-  getSelectedSparks,
-  closeSidebar,
   sparkGroups
 } = useSparkRendererV2()
 
@@ -440,7 +457,12 @@ const handleArticleSubmit = async (articleContent: string) => {
 }
 
 // 处理意图选择
-const handleIntentSelect = async (intent: Intent, customQuestion?: string) => {
+const handleIntentSelect = async (intent: Intent, customQuestion?: string, includeFullText?: boolean) => {
+  // 如果侧边栏关闭，自动打开它
+  if (!isInsightPanelExpanded.value) {
+    toggleInsightPanel()
+  }
+
   // 获取推理模式状态
   const useReasoning = useState('use-reasoning', () => false)
 
@@ -449,7 +471,13 @@ const handleIntentSelect = async (intent: Intent, customQuestion?: string) => {
     context: context.value,
     intent,
     custom_question: customQuestion,
-    use_reasoning: useReasoning.value
+    use_reasoning: useReasoning.value,
+    include_full_text: includeFullText || false
+  }
+
+  // 如果需要附带全文，添加full_text字段
+  if (includeFullText && content.value) {
+    request.full_text = content.value
   }
 
   // 保存请求信息
@@ -462,6 +490,11 @@ const handleIntentSelect = async (intent: Intent, customQuestion?: string) => {
 
 // 处理历史记录选择
 const handleHistorySelect = (item: HistoryItem) => {
+  // 如果侧边栏关闭，自动打开它
+  if (!isInsightPanelExpanded.value) {
+    toggleInsightPanel()
+  }
+
   // 直接显示历史记录的洞察内容
   currentInsight.value = item.insight
 
@@ -479,6 +512,11 @@ const handleHistorySelect = (item: HistoryItem) => {
 
 // 处理继续聊天（从洞察历史）
 const handleContinueChat = (item: InsightHistoryItem) => {
+  // 如果侧边栏关闭，自动打开它
+  if (!isInsightPanelExpanded.value) {
+    toggleInsightPanel()
+  }
+
   // 恢复选中状态
   selectedText.value = item.selected_text
 
@@ -508,6 +546,11 @@ const handleContinueChat = (item: InsightHistoryItem) => {
 
 // 处理查看暂存项
 const handleViewStashItem = (item: StashItem) => {
+  // 如果侧边栏关闭，自动打开它
+  if (!isInsightPanelExpanded.value) {
+    toggleInsightPanel()
+  }
+
   // 显示暂存的洞察内容
   currentInsight.value = item.insight
   currentReasoning.value = item.reasoning || ''
@@ -531,6 +574,56 @@ const handleViewStashItem = (item: StashItem) => {
 const handlePreferencesUpdated = (preferences: AnalysisPreferences) => {
   analysisPreferences.value = preferences
   console.log('✅ 分析偏好设置已更新:', preferences)
+}
+
+// 切换AI洞察面板
+const toggleInsightPanel = () => {
+  if (readerLayoutRef.value) {
+    readerLayoutRef.value.togglePanel()
+  }
+  isInsightPanelExpanded.value = !isInsightPanelExpanded.value
+}
+
+// 处理回放切换
+const handleToggleReplay = () => {
+  toggleReplayMode()
+
+  // 渲染或移除标注
+  const containerEl = document.getElementById('article-content-container')
+  if (!containerEl) return
+
+  if (isReplayMode.value) {
+    renderHistoryHighlights(containerEl, insightHistory.value)
+  } else {
+    removeHistoryHighlights(containerEl)
+  }
+}
+
+// 处理元视角切换
+const handleToggleMetaView = async () => {
+  if (!isMetaViewActive.value) {
+    // 开启元视角：触发分析
+    try {
+      await analyzeArticle(
+        title.value || '未命名文章',
+        '未知作者',
+        new Date().toISOString(),
+        content.value,
+        user.value?.id,
+        undefined
+      )
+
+      // 分析成功后打开面板
+      toggleMetaView()
+    } catch (error) {
+      console.error('元信息分析失败:', error)
+      // 分析失败时也打开面板显示错误
+      toggleMetaView()
+    }
+  } else {
+    // 关闭元视角
+    toggleMetaView()
+  }
 }
 
 // 页面元信息

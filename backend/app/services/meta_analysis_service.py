@@ -10,6 +10,7 @@ from app.config import settings
 from app.utils.sentence_splitter import split_sentences
 from app.utils.error_logger import log_llm_error
 import json
+import json_repair
 import hashlib
 from datetime import datetime
 from typing import Dict, Optional, List
@@ -135,6 +136,14 @@ class MetaAnalysisService:
             )
 
             self.db.add(meta_analysis)
+
+            # 更新文章标题（如果AI生成了标题）
+            if 'generated_title' in llm_result and llm_result['generated_title']:
+                # 如果当前标题是自动截取的（以...结尾），则更新为AI生成的标题
+                if article.title.endswith('...') or len(article.title) <= 50:
+                    article.title = llm_result['generated_title']
+                    logger.info(f"使用AI生成的标题更新文章: {article.title}")
+
             self.db.commit()
             self.db.refresh(meta_analysis)
 
@@ -204,8 +213,11 @@ class MetaAnalysisService:
 
         # 解析响应
         try:
-            result = json.loads(response.choices[0].message.content)
-        except json.JSONDecodeError as e:
+            # 先尝试使用json_repair修复可能的JSON格式错误
+            raw_content = response.choices[0].message.content
+            result = json_repair.repair_json(raw_content, return_objects=True, ensure_ascii=False)
+            logger.info("✅ JSON解析成功（使用json_repair）")
+        except Exception as e:
             # 记录JSON解析错误
             log_llm_error(
                 service_name="meta_analysis",
@@ -225,11 +237,15 @@ class MetaAnalysisService:
 
     def _validate_llm_result(self, result: Dict):
         """验证 LLM 输出结构"""
-        required_keys = ['author_intent', 'timeliness', 'bias', 'knowledge_gaps']
+        required_keys = ['generated_title', 'author_intent', 'timeliness', 'bias', 'knowledge_gaps']
 
         for key in required_keys:
             if key not in result:
-                raise ValueError(f"LLM 输出缺少必需字段: {key}")
+                if key == 'generated_title':
+                    logger.warning("LLM 输出缺少 generated_title 字段，将使用默认标题")
+                    result['generated_title'] = "未命名文章"
+                else:
+                    raise ValueError(f"LLM 输出缺少必需字段: {key}")
 
         # 验证作者意图
         valid_intents = ['inform', 'persuade', 'entertain', 'provoke']
@@ -254,6 +270,11 @@ class MetaAnalysisService:
 你的任务是分析用户提供的文章，并以JSON格式输出结构化的元信息分析结果。
 
 # 分析维度
+
+0. **文章标题 (generated_title)**
+   - 为文章生成一个简洁、准确的标题（10-30字）
+   - 标题应概括文章的核心主题
+   - 使用中文，避免过于学术或晦涩的表达
 
 1. **作者意图 (author_intent)**
    - primary: "inform" (告知), "persuade" (说服), "entertain" (娱乐), "provoke" (激发思考)
@@ -286,6 +307,7 @@ class MetaAnalysisService:
 严格按照以下JSON schema输出：
 
 {
+  "generated_title": "文章的精炼标题",
   "author_intent": {
     "primary": "inform|persuade|entertain|provoke",
     "confidence": 0.85,
@@ -354,9 +376,19 @@ class MetaAnalysisService:
 
     def _format_response(self, meta_analysis: MetaAnalysis) -> Dict:
         """格式化响应"""
+        # 解析raw_llm_response以获取generated_title
+        generated_title = None
+        try:
+            if meta_analysis.raw_llm_response:
+                raw_data = json.loads(meta_analysis.raw_llm_response)
+                generated_title = raw_data.get('generated_title')
+        except:
+            pass
+
         return {
             "id": meta_analysis.id,
             "article_id": meta_analysis.article_id,
+            "generated_title": generated_title,  # 添加AI生成的标题
             "author_intent": meta_analysis.author_intent,
             "timeliness_score": meta_analysis.timeliness_score,
             "timeliness_analysis": meta_analysis.timeliness_analysis,

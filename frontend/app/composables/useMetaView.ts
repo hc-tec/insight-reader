@@ -49,6 +49,7 @@ export interface AnalysisQuality {
 export interface MetaAnalysisData {
   id: number
   article_id: number
+  generated_title?: string  // AI生成的标题
   author_intent: AuthorIntent
   timeliness_score: number
   timeliness_analysis: TimelinessAnalysis
@@ -105,6 +106,13 @@ export const useMetaView = () => {
       metaAnalysisData.value = response.meta_analysis
       console.log('✅ 元信息分析完成:', response.meta_analysis.id)
 
+      // 如果AI生成了标题，更新文章标题
+      if (response.meta_analysis.generated_title) {
+        const { title } = useArticle()
+        title.value = response.meta_analysis.generated_title
+        console.log('✅ 已更新AI生成的标题:', response.meta_analysis.generated_title)
+      }
+
       return response.meta_analysis
 
     } catch (error: any) {
@@ -128,6 +136,14 @@ export const useMetaView = () => {
       if (response.exists && response.meta_analysis) {
         metaAnalysisData.value = response.meta_analysis
         console.log('✅ 获取到元信息分析:', response.meta_analysis.id)
+
+        // 如果AI生成了标题，更新文章标题
+        if (response.meta_analysis.generated_title) {
+          const { title } = useArticle()
+          title.value = response.meta_analysis.generated_title
+          console.log('✅ 已更新AI生成的标题:', response.meta_analysis.generated_title)
+        }
+
         return true
       }
 

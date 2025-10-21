@@ -2,7 +2,7 @@
  * 洞察相关类型定义
  */
 
-export type Intent = 'explain' | 'analyze' | 'counter'
+export type Intent = 'explain' | 'analyze' | 'counter' | 'custom'
 
 export interface InsightRequest {
   selected_text: string
@@ -10,6 +10,8 @@ export interface InsightRequest {
   intent: Intent
   custom_question?: string
   use_reasoning?: boolean
+  include_full_text?: boolean  // 是否附带全文
+  full_text?: string  // 完整文章内容（当include_full_text为true时）
 }
 
 export interface InsightMetadata {

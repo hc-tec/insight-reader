@@ -60,16 +60,27 @@ class PromptTemplates:
         intent: str,
         selected_text: str,
         context: str,
-        custom_question: str | None = None
+        custom_question: str | None = None,
+        include_full_text: bool = False,
+        full_text: str | None = None
     ) -> str:
         """构建用户提示词"""
+
+        # 如果附带全文，添加全文信息
+        full_text_section = ""
+        if include_full_text and full_text:
+            full_text_section = f"""
+
+**完整文章内容**（供参考）：
+{full_text[:10000]}
+"""
 
         # V2.0: 自定义问题
         if custom_question:
             return f"""选中的文本：{selected_text}
 
 上下文：
-{context}
+{context}{full_text_section}
 
 用户的问题：{custom_question}
 
@@ -82,7 +93,7 @@ class PromptTemplates:
 **选中的文本**：{selected_text}
 
 **上下文**：
-{context}
+{context}{full_text_section}
 
 请简要解释：
 1. 这个概念/术语的含义
@@ -97,7 +108,7 @@ class PromptTemplates:
 **选中的文本**：{selected_text}
 
 **上下文**：
-{context}
+{context}{full_text_section}
 
 请分析：
 1. 作者使用了什么类型的论证
@@ -113,7 +124,7 @@ class PromptTemplates:
 **选中的文本**：{selected_text}
 
 **上下文**：
-{context}
+{context}{full_text_section}
 
 请提供：
 1. 可能的反对观点
