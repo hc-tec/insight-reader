@@ -10,7 +10,7 @@ import type { Intent } from '~/types/insight'
 
 export const useCollections = () => {
   const config = useRuntimeConfig()
-  const { getAuthHeaders, isAuthenticated } = useAuth()
+  const { isAuthenticated } = useAuth()
 
   const collections = useState<InsightCardResponse[]>('collections', () => [])
   const total = useState<number>('collections-total', () => 0)
@@ -41,15 +41,7 @@ export const useCollections = () => {
 
       const url = `${config.public.apiBase}/api/v1/collections?${queryParams}`
 
-      const response = await fetch(url, {
-        headers: getAuthHeaders()
-      })
-
-      if (!response.ok) {
-        throw new Error('获取收藏列表失败')
-      }
-
-      const data: InsightCardListResponse = await response.json()
+      const data = await $fetch<InsightCardListResponse>(url)
       collections.value = data.items
       total.value = data.total
     } catch (err) {
@@ -66,17 +58,13 @@ export const useCollections = () => {
     }
 
     try {
-      const response = await fetch(`${config.public.apiBase}/api/v1/collections`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data)
-      })
-
-      if (!response.ok) {
-        throw new Error('收藏失败')
-      }
-
-      const newCard: InsightCardResponse = await response.json()
+      const newCard = await $fetch<InsightCardResponse>(
+        `${config.public.apiBase}/api/v1/collections`,
+        {
+          method: 'POST',
+          body: data
+        }
+      )
 
       // 添加到列表开头
       collections.value.unshift(newCard)
@@ -98,14 +86,9 @@ export const useCollections = () => {
     }
 
     try {
-      const response = await fetch(`${config.public.apiBase}/api/v1/collections/${cardId}`, {
-        method: 'DELETE',
-        headers: getAuthHeaders()
+      await $fetch(`${config.public.apiBase}/api/v1/collections/${cardId}`, {
+        method: 'DELETE'
       })
-
-      if (!response.ok) {
-        throw new Error('删除失败')
-      }
 
       // 从列表中移除
       collections.value = collections.value.filter(c => c.id !== cardId)
@@ -127,17 +110,13 @@ export const useCollections = () => {
     }
 
     try {
-      const response = await fetch(`${config.public.apiBase}/api/v1/collections/${cardId}`, {
-        method: 'PATCH',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ tags })
-      })
-
-      if (!response.ok) {
-        throw new Error('更新失败')
-      }
-
-      const updatedCard: InsightCardResponse = await response.json()
+      const updatedCard = await $fetch<InsightCardResponse>(
+        `${config.public.apiBase}/api/v1/collections/${cardId}`,
+        {
+          method: 'PATCH',
+          body: { tags }
+        }
+      )
 
       // 更新列表中的项
       const index = collections.value.findIndex(c => c.id === cardId)

@@ -209,6 +209,7 @@ const {
   askFollowUp,
   clearConversation
 } = useFollowUp()
+const { onButtonGenerationComplete } = useAnalysisNotifications()
 
 // 收藏相关
 const isSaving = ref(false)
@@ -240,6 +241,19 @@ watch(() => props.reasoning, (newValue) => {
   if (newValue && newValue.length > 0) {
     showReasoning.value = true
   }
+})
+
+// 注册 SSE 回调：按钮生成完成
+onMounted(() => {
+  onButtonGenerationComplete((buttons) => {
+    console.log('📬 收到按钮生成完成通知:', buttons.length, '个', buttons)
+
+    // 直接更新状态（因为现在 followUpButtons 是可写的）
+    followUpButtons.value = buttons
+    isGeneratingButtons.value = false
+
+    console.log('✅ 按钮状态已更新，当前按钮数:', followUpButtons.value.length, '加载状态:', isGeneratingButtons.value)
+  })
 })
 
 // 当洞察生成完成时，自动生成追问按钮

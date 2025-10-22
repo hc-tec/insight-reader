@@ -73,7 +73,7 @@
 
         <!-- 魔法链接登录 -->
         <div v-if="!magicLinkSent">
-          <form @submit.prevent="handleMagicLinkRequest" class="space-y-4">
+          <div class="space-y-4">
             <div>
               <label for="email" class="block text-sm font-medium text-gray-700 mb-1">
                 邮箱地址
@@ -84,13 +84,13 @@
                 type="email"
                 required
                 placeholder="your@email.com"
+                @keypress.enter="handleMagicLinkRequest"
                 class="w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <Button
-              type="submit"
-              :disabled="isLoading || !email"
+              @click="handleMagicLinkRequest"
               class="w-full"
             >
               <div v-if="isLoading" class="flex items-center justify-center">
@@ -99,7 +99,7 @@
               </div>
               <span v-else>发送登录链接</span>
             </Button>
-          </form>
+          </div>
 
           <!-- 错误提示 -->
           <div v-if="error" class="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
@@ -174,18 +174,28 @@ const handleGithubLogin = () => {
 const handleMagicLinkRequest = async () => {
   if (!email.value) return
 
+  console.log('[Login] 开始发送魔法链接:', email.value)
+
   isLoading.value = true
   error.value = ''
 
-  const result = await requestMagicLink(email.value)
+  try {
+    const result = await requestMagicLink(email.value)
+    console.log('[Login] 魔法链接请求结果:', result)
 
-  if (result.success) {
-    magicLinkSent.value = true
-  } else {
-    error.value = result.error || '发送失败，请重试'
+    if (result.success) {
+      console.log('[Login] 魔法链接发送成功')
+      magicLinkSent.value = true
+    } else {
+      console.error('[Login] 魔法链接发送失败:', result.error)
+      error.value = result.error || '发送失败，请重试'
+    }
+  } catch (err) {
+    console.error('[Login] 魔法链接请求异常:', err)
+    error.value = '发送失败，请重试'
+  } finally {
+    isLoading.value = false
   }
-
-  isLoading.value = false
 }
 
 // 页面元信息

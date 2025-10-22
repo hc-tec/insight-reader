@@ -1,11 +1,10 @@
 """AI 服务 - OpenAI API 集成"""
+import logging
 from openai import AsyncOpenAI
 from app.config import settings
 from app.utils.prompt_templates import PromptTemplates
 from app.schemas.insight import FollowUpButton, Message
-from app.utils.error_logger import log_llm_error
 import json
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -124,18 +123,7 @@ class AIService:
                         if delta.content:
                             yield delta.content
         except Exception as e:
-            # 记录LLM调用错误
-            log_llm_error(
-                service_name="ai_service_generate_insight",
-                model_name=self.model_used,
-                error=e,
-                request_data={
-                    "intent": intent,
-                    "selected_text_length": len(selected_text),
-                    "use_reasoning": use_reasoning
-                }
-            )
-            logger.error(f"❌ LLM 调用失败: {e}")
+            logger.error(f"LLM调用失败 - ai_service_generate_insight - model={self.model_used}, intent={intent}, error={e}")
             raise
 
     async def generate_follow_up_buttons(
@@ -213,16 +201,7 @@ class AIService:
             try:
                 buttons_data = json.loads(content)
             except json.JSONDecodeError as e:
-                # 记录JSON解析错误
-                log_llm_error(
-                    service_name="ai_service_follow_up_buttons",
-                    model_name=settings.simple_model,
-                    error=e,
-                    request_data={
-                        "response_content": content[:500]
-                    }
-                )
-                logger.error(f"❌ JSON 解析失败: {e}")
+                logger.error(f"JSON解析失败 - ai_service_follow_up_buttons - model={settings.simple_model}, error={e}")
                 raise
 
             # 转换为 FollowUpButton 对象
@@ -248,18 +227,7 @@ class AIService:
                 )
             ]
         except Exception as e:
-            # 记录LLM调用错误
-            log_llm_error(
-                service_name="ai_service_follow_up_buttons",
-                model_name=settings.simple_model,
-                error=e,
-                request_data={
-                    "selected_text_length": len(selected_text),
-                    "insight_length": len(insight),
-                    "intent": intent
-                }
-            )
-            logger.error(f"❌ 生成追问按钮失败: {e}")
+            logger.error(f"LLM调用失败 - ai_service_follow_up_buttons - model={settings.simple_model}, intent={intent}, error={e}")
             # 返回默认按钮
             return [
                 FollowUpButton(
@@ -354,19 +322,7 @@ class AIService:
                             yield delta.content
 
         except Exception as e:
-            # 记录LLM调用错误
-            log_llm_error(
-                service_name="ai_service_follow_up_answer",
-                model_name=self.model_used,
-                error=e,
-                request_data={
-                    "selected_text_length": len(selected_text),
-                    "follow_up_question": follow_up_question,
-                    "use_reasoning": use_reasoning,
-                    "conversation_history_length": len(conversation_history)
-                }
-            )
-            logger.error(f"❌ 生成追问回答失败: {e}")
+            logger.error(f"LLM调用失败 - ai_service_follow_up_answer - model={self.model_used}, question={follow_up_question}, error={e}")
             raise
 
     async def generate_simple_response(self, prompt: str) -> str:
@@ -394,14 +350,5 @@ class AIService:
             return response.choices[0].message.content.strip()
 
         except Exception as e:
-            # 记录LLM调用错误
-            log_llm_error(
-                service_name="ai_service_simple_response",
-                model_name=settings.default_model,
-                error=e,
-                request_data={
-                    "prompt_length": len(prompt)
-                }
-            )
-            logger.error(f"❌ 生成简单响应失败: {e}")
+            logger.error(f"LLM调用失败 - ai_service_simple_response - model={settings.default_model}, error={e}")
             raise

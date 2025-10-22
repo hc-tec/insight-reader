@@ -1,4 +1,8 @@
 """配置管理"""
+import logging
+
+logger = logging.getLogger(__name__)
+
 from pydantic_settings import BaseSettings
 
 
@@ -15,7 +19,9 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # 数据库配置
-    database_url: str = "sqlite:///./insightreader_v2.db"
+    # 优先使用PostgreSQL（生产环境），否则使用SQLite（开发环境）
+    storage2_database_url: str = ""  # 生产环境PostgreSQL连接URL
+    database_url: str = "sqlite:///./insightreader_v2.db"  # 默认SQLite（开发环境）
 
     # JWT 认证配置
     secret_key: str = "" # 用于签名 JWT token
@@ -33,6 +39,9 @@ class Settings(BaseSettings):
     # CORS
     cors_origins: list[str] = []
 
+    # 管理员配置
+    admin_emails: str = "admin@insightreader.com"  # 逗号分隔的管理员邮箱列表
+
     # Google OAuth
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -47,6 +56,7 @@ class Settings(BaseSettings):
     mail_username: str = ""
     mail_password: str = ""
     mail_from: str = ""
+    mail_from_name: str = ""
     mail_server: str = "smtp.gmail.com"
     mail_port: int = 587
     mail_tls: bool = True
@@ -63,3 +73,10 @@ class Settings(BaseSettings):
 
 # 全局配置实例
 settings = Settings()
+
+# 如果设置了STORAGE2_DATABASE_URL，优先使用PostgreSQL
+if settings.storage2_database_url:
+    settings.database_url = settings.storage2_database_url
+    logger.info("[OK] Using PostgreSQL database")
+else:
+    logger.info(f"[OK] Using SQLite database: {settings.database_url}")

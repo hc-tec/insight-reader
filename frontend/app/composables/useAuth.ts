@@ -69,25 +69,21 @@ export const useAuth = () => {
   // 请求魔法链接
   const requestMagicLink = async (email: string) => {
     try {
-      const response = await fetch(`${config.public.apiBase}/api/v1/auth/magic-link/request`, {
+      console.log('[useAuth] 请求魔法链接:', email)
+      console.log('[useAuth] API Base:', config.public.apiBase)
+
+      const data = await $fetch(`${config.public.apiBase}/api/v1/auth/magic-link/request`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email })
+        body: { email }
       })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || '发送魔法链接失败')
-      }
-
-      const data = await response.json()
+      console.log('[useAuth] 魔法链接请求成功:', data)
       return { success: true, message: data.message }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[useAuth] 魔法链接请求失败:', error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : '发送魔法链接失败'
+        error: error?.data?.detail || error?.message || '发送魔法链接失败'
       }
     }
   }
@@ -95,26 +91,22 @@ export const useAuth = () => {
   // 验证魔法链接
   const verifyMagicLink = async (token: string) => {
     try {
-      const response = await fetch(
-        `${config.public.apiBase}/api/v1/auth/magic-link/verify?token=${token}`,
-        {
-          method: 'GET',
-        }
+      console.log('[useAuth] 验证魔法链接, token:', token.substring(0, 20) + '...')
+      console.log('[useAuth] 验证 URL:', `${config.public.apiBase}/api/v1/auth/magic-link/verify`)
+
+      const data = await $fetch<AuthResponse>(
+        `${config.public.apiBase}/api/v1/auth/magic-link/verify?token=${token}`
       )
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.detail || '验证魔法链接失败')
-      }
-
-      const data: AuthResponse = await response.json()
+      console.log('[useAuth] 验证成功，用户信息:', data.user)
       saveAuth(data)
 
       return { success: true, user: data.user }
-    } catch (error) {
+    } catch (error: any) {
+      console.error('[useAuth] 验证失败:', error)
       return {
         success: false,
-        error: error instanceof Error ? error.message : '验证魔法链接失败'
+        error: error?.data?.detail || error?.message || '验证魔法链接失败或已过期'
       }
     }
   }

@@ -10,6 +10,9 @@ from app.models.models import Article, AnalysisReport
 from app.api.sse import notify_analysis_complete, notify_analysis_progress
 import asyncio
 from datetime import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @celery_app.task(bind=True, max_retries=3)
@@ -25,7 +28,7 @@ def analyze_article_task(self, article_id: int, user_id: int = None):
     Returns:
         分析报告 ID
     """
-    print(f"🚀 开始分析文章 {article_id}...")
+    logger.info(f"🚀 开始分析文章 {article_id}...")
 
     db = next(get_db())
 
@@ -51,7 +54,7 @@ def analyze_article_task(self, article_id: int, user_id: int = None):
             report.retry_count += 1
 
         db.commit()
-        print(f"📝 分析报告记录已创建/更新，状态: processing")
+        logger.info(f"📝 分析报告记录已创建/更新，状态: processing")
 
         # 3. 发送进度通知（如果有用户ID）
         if user_id:
@@ -66,7 +69,7 @@ def analyze_article_task(self, article_id: int, user_id: int = None):
             article.title
         ))
 
-        print(f"✅ AI 分析完成")
+        logger.info(f"✅ AI 分析完成")
 
         # 5. 发送进度通知
         if user_id:
@@ -84,17 +87,17 @@ def analyze_article_task(self, article_id: int, user_id: int = None):
         report.error_message = None
 
         db.commit()
-        print(f"💾 分析报告已保存到数据库")
+        logger.info(f"💾 分析报告已保存到数据库")
 
         # 7. 发送完成通知
         if user_id:
             asyncio.run(notify_analysis_complete(user_id, article_id))
-            print(f"📬 已通知用户 {user_id} 分析完成")
+            logger.info(f"📬 已通知用户 {user_id} 分析完成")
 
         return report.id
 
     except Exception as e:
-        print(f"❌ 分析失败: {str(e)}")
+        logger.error(f"❌ 分析失败: {str(e)}")
 
         # 更新报告状态为失败
         if 'report' in locals():
@@ -104,10 +107,10 @@ def analyze_article_task(self, article_id: int, user_id: int = None):
 
         # 重试逻辑
         if self.request.retries < self.max_retries:
-            print(f"🔄 准备重试 (第 {self.request.retries + 1} 次)...")
+            logger.error(f"🔄 准备重试 (第 {self.request.retries + 1} 次)...")
             raise self.retry(exc=e, countdown=60)  # 60秒后重试
         else:
-            print(f"❌ 已达到最大重试次数，任务失败")
+            logger.error(f"❌ 已达到最大重试次数，任务失败")
             raise
 
     finally:
@@ -126,7 +129,7 @@ def batch_analyze_articles(article_ids: list, user_id: int = None):
     Returns:
         成功分析的文章数量
     """
-    print(f"📚 开始批量分析 {len(article_ids)} 篇文章...")
+    logger.info(f"📚 开始批量分析 {len(article_ids)} 篇文章...")
 
     success_count = 0
     for article_id in article_ids:
@@ -134,7 +137,7 @@ def batch_analyze_articles(article_ids: list, user_id: int = None):
             analyze_article_task.delay(article_id, user_id)
             success_count += 1
         except Exception as e:
-            print(f"❌ 文章 {article_id} 分析任务创建失败: {str(e)}")
+            logger.error(f"❌ 文章 {article_id} 分析任务创建失败: {str(e)}")
 
-    print(f"✅ 批量分析任务创建完成，成功: {success_count}/{len(article_ids)}")
+    logger.info(f"✅ 批量分析任务创建完成，成功: {success_count}/{len(article_ids)}")
     return success_count

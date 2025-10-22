@@ -4,23 +4,25 @@
 使用 GPT-4o 对文章进行全面深度分析，生成结构化报告
 """
 
-from openai import OpenAI
+import logging
+from openai import AsyncOpenAI
 from app.config import settings
 from app.utils.sentence_splitter import split_sentences
-from app.utils.error_logger import log_llm_error
 import json
 import json_repair
 import re
 import time
 from typing import List, Dict, Optional
 
+logger = logging.getLogger(__name__)
+
 
 class UnifiedAnalysisService:
     """统一深度分析服务"""
 
     def __init__(self):
-        """初始化 OpenAI 客户端"""
-        self.client = OpenAI(
+        """初始化 AsyncOpenAI 客户端"""
+        self.client = AsyncOpenAI(
             api_key=settings.openai_api_key,
             base_url=settings.openai_base_url
         )
@@ -49,15 +51,15 @@ class UnifiedAnalysisService:
 
         # 1. 预处理：分句
         sentences = self._split_sentences(article_content)
-        print(f"📄 文章分句完成，共 {len(sentences)} 个句子")
+        logger.info(f"文章分句完成，共 {len(sentences)} 个句子")
 
         # 2. 构建 Prompt（传递句子列表而非原始内容）
         prompt = self._build_analysis_prompt(sentences, article_title)
 
-        # 3. 调用 LLM
-        print("🤖 开始调用 LLM 进行深度分析...")
+        # 3. 调用 LLM (异步)
+        logger.info("开始调用 LLM 进行深度分析")
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {
@@ -73,18 +75,7 @@ class UnifiedAnalysisService:
                 temperature=0.3,
             )
         except Exception as e:
-            # 记录LLM调用错误
-            log_llm_error(
-                service_name="unified_analysis",
-                model_name=self.model,
-                error=e,
-                request_data={
-                    "article_title": article_title,
-                    "sentence_count": len(sentences),
-                    "prompt_length": len(prompt)
-                }
-            )
-            print(f"❌ LLM 调用失败: {e}")
+            logger.error(f"LLM调用失败 - unified_analysis - model={self.model}, error={e}")
             raise
 
         # 4. 解析响应
@@ -92,18 +83,9 @@ class UnifiedAnalysisService:
             # 先尝试使用json_repair修复可能的JSON格式错误
             raw_content = response.choices[0].message.content
             report_json = json_repair.repair_json(raw_content, return_objects=True, ensure_ascii=False)
-            print("✅ JSON解析成功（使用json_repair）")
+            logger.info("JSON解析成功（使用json_repair）")
         except Exception as e:
-            # 记录JSON解析错误
-            log_llm_error(
-                service_name="unified_analysis",
-                model_name=self.model,
-                error=e,
-                request_data={
-                    "response_content": response.choices[0].message.content[:500]  # 只记录前500字符
-                }
-            )
-            print(f"❌ JSON 解析失败: {e}")
+            logger.error(f"JSON解析失败 - unified_analysis - model={self.model}, error={e}")
             raise
 
         # 5. 后处理：添加 DOM 路径
@@ -111,11 +93,11 @@ class UnifiedAnalysisService:
 
         # 6. 添加分句结果到报告（供前端使用）
         report_json['sentences'] = sentences
-        print(f"✅ 已将 {len(sentences)} 个句子添加到报告")
+        logger.info(f"已将 {len(sentences)} 个句子添加到报告")
 
         # 7. 验证报告
         self._validate_report(report_json)
-        print("✅ 报告验证通过")
+        logger.info("报告验证通过")
 
         # 8. 计算处理时间
         processing_time_ms = int((time.time() - start_time) * 1000)
@@ -334,4 +316,4 @@ class UnifiedAnalysisService:
         if not isinstance(tags, list) or len(tags) < 3 or len(tags) > 5:
             raise ValueError(f"tags 数量应在 3-5 个之间，当前: {len(tags)}")
 
-        print(f"✅ 报告验证通过：{len(report['concept_sparks'])} 个概念火花，{len(report.get('argument_sparks', []))} 个论证火花")
+        logger.info(f"报告验证通过：{len(report['concept_sparks'])} 个概念火花，{len(report.get('argument_sparks', []))} 个论证火花")

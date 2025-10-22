@@ -50,24 +50,31 @@ const error = ref('')
 onMounted(async () => {
   const token = route.query.token as string
 
+  console.log('[Magic] 收到 token:', token ? `${token.substring(0, 20)}...` : 'null')
+
   if (!token) {
     isVerifying.value = false
     error.value = '缺少验证令牌'
+    console.error('[Magic] 缺少 token')
     return
   }
 
   // 验证魔法链接
+  console.log('[Magic] 开始验证魔法链接')
   const result = await verifyMagicLink(token)
+  console.log('[Magic] 验证结果:', result)
 
   isVerifying.value = false
 
   if (result.success) {
+    console.log('[Magic] 验证成功，准备跳转')
     isSuccess.value = true
     // 延迟跳转，让用户看到成功提示
     setTimeout(() => {
       router.push('/')
     }, 1500)
   } else {
+    console.error('[Magic] 验证失败:', result.error)
     error.value = result.error || '验证链接失败或已过期'
   }
 })

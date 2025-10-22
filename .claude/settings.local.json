@@ -23,7 +23,13 @@
       "Read(//d/**)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:pypi.org)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(python test_sentence_splitter.py:*)",
+      "Bash(python:*)",
+      "Bash(dir:*)",
+      "Bash(set STORAGE_DATABASE_URL=postgresql://test:test@localhost:5432/testdb:*)",
+      "Bash(cd:*)",
+      "Bash(taskkill /F /PID 7888)"
     ],
     "deny": [],
     "ask": []

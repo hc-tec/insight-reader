@@ -1,4 +1,5 @@
 """知识图谱服务 - 构建和查询用户的知识图谱"""
+import logging
 from typing import Dict, List, Tuple, Set
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -6,6 +7,8 @@ from collections import defaultdict, Counter
 import re
 
 from app.models.models import KnowledgeNode, KnowledgeEdge, InsightCard, SparkClick
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraphService:
@@ -111,7 +114,7 @@ class KnowledgeGraphService:
         Returns:
             构建结果
         """
-        print(f"🔄 开始重建知识图谱: User {user_id}")
+        logger.info(f"开始重建知识图谱: User {user_id}")
 
         # 删除旧的图谱数据
         self.db.query(KnowledgeEdge).filter(KnowledgeEdge.user_id == user_id).delete()
@@ -124,7 +127,7 @@ class KnowledgeGraphService:
         # 构建关系边
         edges = self._build_edges_from_nodes(user_id, nodes)
 
-        print(f"✅ 知识图谱重建完成: {len(nodes)} 节点, {len(edges)} 边")
+        logger.info(f"知识图谱重建完成: {len(nodes)} 节点, {len(edges)} 边")
 
         return {
             "nodes_created": len(nodes),
@@ -186,7 +189,7 @@ class KnowledgeGraphService:
             nodes.append(node)
 
         self.db.commit()
-        print(f"📊 提取到 {len(nodes)} 个概念节点")
+        logger.info(f"提取到 {len(nodes)} 个概念节点")
         return nodes
 
     def _identify_domain(self, concept: str) -> str:
@@ -266,7 +269,7 @@ class KnowledgeGraphService:
                     edges.append(edge)
 
         self.db.commit()
-        print(f"🔗 创建了 {len(edges)} 条关系边")
+        logger.info(f"创建了 {len(edges)} 条关系边")
         return edges
 
     def get_blind_spots(self, user_id: int) -> Dict:

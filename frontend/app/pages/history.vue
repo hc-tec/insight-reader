@@ -194,7 +194,6 @@ const fetchArticles = async () => {
       `${config.public.apiBase}/api/v1/articles`,
       {
         params: {
-          user_id: user.value?.id,
           limit: 50
         }
       }

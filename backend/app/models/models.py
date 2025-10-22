@@ -193,6 +193,10 @@ class Article(Base):
     word_count = Column(Integer, nullable=True)  # 字数统计
     insight_count = Column(Integer, default=0, nullable=False)  # 洞察次数
 
+    # 示例文章标记
+    is_demo = Column(Boolean, default=False, nullable=False, index=True)  # 是否为示例文章
+    demo_order = Column(Integer, nullable=True)  # 示例文章展示顺序（NULL表示非示例）
+
     # 时间戳
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     last_read_at = Column(DateTime, default=datetime.utcnow, nullable=False)

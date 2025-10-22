@@ -28,16 +28,19 @@ export const useInsightReplay = () => {
 
   /**
    * 加载文章的洞察历史
+   *
+   * 权限控制：
+   * - 示例文章（is_demo=True）：任何人都可以访问，返回所有洞察
+   * - 普通文章：需要登录且是文章所有者，返回该用户的洞察
    */
-  const loadInsightHistory = async (articleId: number, userId?: number) => {
+  const loadInsightHistory = async (articleId: number) => {
     isLoading.value = true
     try {
       const response = await $fetch<{ total: number; insights: InsightHistoryItem[] }>(
         `${config.public.apiBase}/api/v1/insights/history`,
         {
           params: {
-            article_id: articleId,
-            user_id: userId
+            article_id: articleId
           }
         }
       )

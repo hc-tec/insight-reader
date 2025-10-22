@@ -150,18 +150,6 @@ export const useStash = () => {
     loadFromStorage()
   })
 
-  // 页面卸载前提醒（如果有未导出的暂存）
-  if (process.client) {
-    onBeforeUnmount(() => {
-      if (stashItems.value.length > 0) {
-        window.addEventListener('beforeunload', (e) => {
-          e.preventDefault()
-          e.returnValue = ''
-        })
-      }
-    })
-  }
-
   return {
     stashItems: readonly(stashItems),
     addToStash,

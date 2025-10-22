@@ -78,7 +78,6 @@ export const useInsightGenerator = () => {
                 method: 'POST',
                 body: {
                   article_id: currentArticleId.value,
-                  user_id: user.value.id,
                   selected_text: request.selected_text,
                   selected_start: selectedStart.value,
                   selected_end: selectedEnd.value,

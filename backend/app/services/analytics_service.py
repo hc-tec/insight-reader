@@ -1,4 +1,5 @@
 """分析服务 - 处理火花点击和好奇心指纹"""
+import logging
 from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
@@ -7,6 +8,8 @@ from collections import defaultdict, Counter
 import re
 
 from app.models.models import SparkClick, CuriosityFingerprint, InsightCard
+
+logger = logging.getLogger(__name__)
 
 
 class AnalyticsService:
@@ -45,7 +48,7 @@ class AnalyticsService:
         self.db.commit()
         self.db.refresh(click)
 
-        print(f"✅ 记录火花点击: {spark_type} - {spark_text[:20]}...")
+        logger.info(f"记录火花点击: {spark_type} - {spark_text[:20]}...")
 
         # 异步更新好奇心指纹（可选）
         # 为了性能，这里可以使用异步任务队列（Celery）
@@ -109,7 +112,7 @@ class AnalyticsService:
             self.db.add(fingerprint)
 
         self.db.commit()
-        print(f"✅ 好奇心指纹已更新: User {user_id}")
+        logger.info(f"好奇心指纹已更新: User {user_id}")
 
     def _compute_curiosity_fingerprint(self, user_id: int) -> Dict:
         """

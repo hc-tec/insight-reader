@@ -70,7 +70,7 @@ export const useMetaView = () => {
   const analysisError = useState<string | null>('meta-view-error', () => null)
 
   /**
-   * 触发元信息分析
+   * 触发元信息分析（异步版本）
    */
   const analyzeArticle = async (
     title: string,
@@ -86,7 +86,12 @@ export const useMetaView = () => {
     analysisError.value = null
 
     try {
-      const response = await $fetch<{ status: string; meta_analysis: MetaAnalysisData }>(
+      const response = await $fetch<{
+        status: string
+        message?: string
+        meta_analysis: MetaAnalysisData | null
+        task_id?: string
+      }>(
         `${config.public.apiBase}/api/v1/meta-analysis/analyze`,
         {
           method: 'POST',
@@ -103,24 +108,34 @@ export const useMetaView = () => {
         }
       )
 
-      metaAnalysisData.value = response.meta_analysis
-      console.log('✅ 元信息分析完成:', response.meta_analysis.id)
+      if (response.status === 'completed' && response.meta_analysis) {
+        // 已有缓存结果，立即返回
+        metaAnalysisData.value = response.meta_analysis
+        isAnalyzing.value = false
+        console.log('✅ 元信息分析完成（来自缓存）:', response.meta_analysis.id)
 
-      // 如果AI生成了标题，更新文章标题
-      if (response.meta_analysis.generated_title) {
-        const { title } = useArticle()
-        title.value = response.meta_analysis.generated_title
-        console.log('✅ 已更新AI生成的标题:', response.meta_analysis.generated_title)
+        // 如果AI生成了标题，更新文章标题
+        if (response.meta_analysis.generated_title) {
+          const { title } = useArticle()
+          title.value = response.meta_analysis.generated_title
+          console.log('✅ 已更新AI生成的标题:', response.meta_analysis.generated_title)
+        }
+
+        return response.meta_analysis
+
+      } else if (response.status === 'pending') {
+        // 异步任务已提交，等待SSE通知
+        console.log('🔄 元视角分析已提交，任务ID:', response.task_id)
+        // 保持 isAnalyzing.value = true，等待SSE回调
+        // SSE回调会更新 metaAnalysisData 并设置 isAnalyzing = false
+        return null
       }
-
-      return response.meta_analysis
 
     } catch (error: any) {
       console.error('❌ 元信息分析失败:', error)
       analysisError.value = error.data?.detail || error.message || '分析失败'
-      throw error
-    } finally {
       isAnalyzing.value = false
+      throw error
     }
   }
 

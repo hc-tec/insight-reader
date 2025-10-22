@@ -5,6 +5,21 @@ export default defineNuxtConfig({
   pages: true,
   // MVP 阶段使用 SPA 模式，无需 SSR
   ssr: false,
+  router: {
+    options: {
+      hashMode: true,
+    },
+  },
+
+  routeRules: {
+    '*': { ssr: false },
+  },
+
+  hooks: {
+    'prerender:routes' ({ routes }) {
+      routes.clear() // Do not generate any routes (except the defaults)
+    },
+  },
 
   shadcn: {
     prefix: '',
@@ -21,7 +36,8 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: process.env.NUXT_PUBLIC_API_BASE
+      apiBase: process.env.NUXT_PUBLIC_API_BASE,
+      adminEmails: process.env.NUXT_PUBLIC_ADMIN_EMAILS || 'admin@insightreader.com'
     }
   },
 

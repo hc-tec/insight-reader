@@ -1,18 +1,24 @@
 """洞察生成 API"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 import json
 import time
+import logging
 
 from app.schemas.insight import (
     InsightRequest,
     InsightMetadata,
     ButtonGenerationRequest,
     ButtonGenerationResponse,
-    FollowUpRequest
+    FollowUpRequest,
+    FollowUpButton
 )
 from app.services.ai_service import AIService
+from app.core.task_manager import task_manager
+from app.utils.auth import get_current_active_user
+from app.models.models import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -115,31 +121,134 @@ async def health():
     return {"status": "ok", "endpoint": "insights"}
 
 
-@router.post("/insights/generate-buttons", response_model=ButtonGenerationResponse)
-async def generate_follow_up_buttons(request: ButtonGenerationRequest):
+# ============= 后台任务函数 =============
+
+async def generate_buttons_task(
+    selected_text: str,
+    insight: str,
+    intent: str,
+    conversation_history: list
+):
     """
-    生成智能追问按钮
+    后台按钮生成任务
+
+    Args:
+        selected_text: 选中文本
+        insight: 洞察内容
+        intent: 意图
+        conversation_history: 对话历史
+
+    Returns:
+        按钮列表
+    """
+    try:
+        logger.info(f"[后台任务] 开始生成追问按钮")
+
+        ai_service = AIService()
+        buttons = await ai_service.generate_follow_up_buttons(
+            selected_text=selected_text,
+            insight=insight,
+            intent=intent,
+            conversation_history=conversation_history
+        )
+
+        logger.info(f"[后台任务] 按钮生成完成，共 {len(buttons)} 个")
+
+        return {
+            "status": "completed",
+            "buttons": [btn.model_dump() for btn in buttons]
+        }
+
+    except Exception as e:
+        logger.error(f"[后台任务] 按钮生成失败: {str(e)}", exc_info=True)
+
+        # 返回默认按钮
+        default_buttons = [
+            {"id": "example_default", "label": "举个例子", "icon": "🌰", "category": "example"},
+            {"id": "simplify_default", "label": "说得简单点", "icon": "🎯", "category": "simplify"},
+            {"id": "extend_default", "label": "深入了解", "icon": "📚", "category": "extend"}
+        ]
+
+        return {
+            "status": "completed",
+            "buttons": default_buttons,
+            "error": str(e)
+        }
+
+
+@router.post("/insights/generate-buttons")
+async def generate_follow_up_buttons(
+    request: ButtonGenerationRequest,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    生成智能追问按钮（异步版本）
 
     Args:
         request: 包含选中文本、洞察内容、意图和对话历史的请求
+        current_user: 当前登录用户（从 JWT 获取）
 
     Returns:
-        追问按钮列表（3-4个）
+        {
+            "status": "completed" | "pending",
+            "buttons": [...] | null,
+            "task_id": str | null
+        }
     """
-    try:
-        ai_service = AIService()
+    # 默认按钮（立即返回或失败时使用）
+    default_buttons = [
+        FollowUpButton(
+            id="example_default",
+            label="举个例子",
+            icon="🌰",
+            category="example"
+        ),
+        FollowUpButton(
+            id="simplify_default",
+            label="说得简单点",
+            icon="🎯",
+            category="simplify"
+        ),
+        FollowUpButton(
+            id="extend_default",
+            label="深入了解",
+            icon="📚",
+            category="extend"
+        )
+    ]
 
-        buttons = await ai_service.generate_follow_up_buttons(
-            selected_text=request.selected_text,
-            insight=request.insight,
-            intent=request.intent,
-            conversation_history=request.conversation_history
+    try:
+        # 提交后台任务
+        task_id = task_manager.submit_task(
+            "button_generation",
+            generate_buttons_task,
+            {
+                "user_id": current_user.id,  # 从 JWT 获取用户 ID
+                "insight_preview": request.insight[:50] + "..."
+            },
+            request.selected_text,
+            request.insight,
+            request.intent,
+            request.conversation_history
         )
 
-        return ButtonGenerationResponse(buttons=buttons)
+        logger.info(f"[API] 按钮生成任务已提交，任务ID: {task_id}")
+
+        return {
+            "status": "pending",
+            "buttons": None,
+            "task_id": task_id
+        }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"生成追问按钮失败: {str(e)}")
+        logger.error(f"[API] 提交按钮生成任务失败: {str(e)}")
+
+        # 失败时直接返回默认按钮
+        return {
+            "status": "completed",
+            "buttons": [btn.model_dump() for btn in default_buttons],
+            "task_id": None
+        }
 
 
 @router.post("/insights/follow-up")

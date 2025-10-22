@@ -15,6 +15,7 @@
       <ArticleInput
         v-if="!isReading"
         @submit="handleArticleSubmit"
+        @article-click="handleDemoArticleClick"
       />
 
       <!-- 阅读界面：双栏布局 -->
@@ -214,6 +215,14 @@ const {
   toggleMetaView
 } = useMetaView()
 
+// 思维透镜相关
+const {
+  enabledLenses,
+  lensResults,
+  loadingLenses,
+  renderHighlightsByType
+} = useThinkingLens()
+
 // UI状态
 const isHistoryPanelOpen = ref(false)
 const isInsightPanelExpanded = ref(false)
@@ -229,7 +238,14 @@ const config = useRuntimeConfig()
 const { user } = useAuth()
 
 // 统一深度分析相关
-const { connect, disconnect, onAnalysisComplete } = useAnalysisNotifications()
+const {
+  connect,
+  disconnect,
+  onAnalysisComplete,
+  onMetaAnalysisComplete,
+  onLensComplete,
+  onTaskFailed
+} = useAnalysisNotifications()
 const {
   renderSparks,
   sparkGroups
@@ -288,6 +304,43 @@ onUnmounted(() => {
   disconnect()
 })
 
+// 处理示例文章点击
+const handleDemoArticleClick = async (articleId: number) => {
+  try {
+    // 获取文章详情
+    const article = await $fetch<any>(
+      `${config.public.apiBase}/api/v1/articles/${articleId}`
+    )
+
+    // 加载文章内容
+    setArticle(article.content, article.title)
+
+    // 设置文章 ID，触发历史洞察加载
+    currentArticleId.value = Number(articleId)
+
+    console.log('✅ 从示例文章加载:', article.title)
+
+    // 等待 DOM 更新完成
+    await nextTick()
+
+    // 尝试加载分析报告并渲染火花
+    try {
+      const reportResponse = await $fetch(`${config.public.apiBase}/api/v1/articles/${articleId}/analysis-report`)
+
+      // 保存完整报告数据
+      analysisReport.value = reportResponse.report_data
+
+      // 渲染火花
+      await renderSparks(reportResponse.report_data)
+      console.log('✨ 火花已渲染（示例文章）')
+    } catch (reportError) {
+      console.log('ℹ️ 该文章暂无分析报告')
+    }
+  } catch (error) {
+    console.error('❌ 加载示例文章失败:', error)
+  }
+}
+
 // 处理文章提交
 const handleArticleSubmit = async (articleContent: string) => {
   setArticle(articleContent)
@@ -295,18 +348,12 @@ const handleArticleSubmit = async (articleContent: string) => {
   // 如果用户已登录，保存文章并触发深度分析
   if (user.value?.id) {
     try {
-      // 获取用户的分析偏好设置
-      if (!analysisPreferences.value) {
-        analysisPreferences.value = await fetchPreferences(user.value.id)
-      }
-
-      // 调用新的 save-with-analysis API
+      // 调用新的 save-with-analysis API（快速返回）
       const response = await $fetch(`${config.public.apiBase}/api/v1/articles/save-with-analysis`, {
         method: 'POST',
         body: {
           title: title.value || '未命名文章',
-          content: articleContent,
-          user_id: user.value.id
+          content: articleContent
         }
       })
 
@@ -359,95 +406,58 @@ const handleArticleSubmit = async (articleContent: string) => {
         })
       }
 
-      // 根据用户偏好设置自动触发分析
-      if (analysisPreferences.value) {
-        const prefs = analysisPreferences.value
+      // 异步获取并应用用户偏好（不阻塞主流程）
+      if (!analysisPreferences.value && user.value?.id) {
+        fetchPreferences(user.value.id).then(prefs => {
+          analysisPreferences.value = prefs
 
-        // 自动触发元视角分析
-        if (prefs.auto_meta_analysis) {
-          console.log('🔍 自动触发元视角分析...')
-          try {
-            await $fetch(`${config.public.apiBase}/api/v1/meta-analysis/analyze`, {
+          // 应用偏好设置：自动触发元视角分析
+          if (prefs.auto_meta_analysis && currentArticleId.value) {
+            console.log('🔍 自动触发元视角分析...')
+            $fetch(`${config.public.apiBase}/api/v1/meta-analysis/analyze`, {
               method: 'POST',
               body: {
                 title: title.value || '未命名文章',
                 author: '未知作者',
-                full_text: articleContent,
-                user_id: user.value.id
+                full_text: articleContent
               }
-            })
-            console.log('✅ 元视角分析完成')
-          } catch (error) {
-            console.error('❌ 元视角分析失败:', error)
-          }
-        }
-
-        // 自动触发论证透镜
-        if (prefs.auto_argument_lens) {
-          console.log('🔍 自动触发论证透镜分析...')
-          try {
-            // 确保已有 meta_analysis
-            const metaResponse = await $fetch(`${config.public.apiBase}/api/v1/meta-analysis/analyze`, {
-              method: 'POST',
-              body: {
-                title: title.value || '未命名文章',
-                author: '未知作者',
-                full_text: articleContent,
-                user_id: user.value.id
+            }).then(metaResponse => {
+              if (metaResponse.status === 'completed') {
+                console.log('✅ 元视角分析完成（来自缓存）')
+              } else if (metaResponse.status === 'pending') {
+                console.log('🔄 元视角分析已提交，任务ID:', metaResponse.task_id)
               }
+            }).catch(error => {
+              console.error('❌ 元视角分析失败:', error)
             })
-
-            if (metaResponse.meta_analysis?.id) {
-              await $fetch(`${config.public.apiBase}/api/v1/thinking-lens/apply`, {
-                method: 'POST',
-                body: {
-                  meta_analysis_id: metaResponse.meta_analysis.id,
-                  lens_type: 'argument_structure',
-                  full_text: articleContent
-                }
-              })
-              console.log('✅ 论证透镜分析完成')
-            }
-          } catch (error) {
-            console.error('❌ 论证透镜分析失败:', error)
           }
-        }
-
-        // 自动触发意图透镜
-        if (prefs.auto_stance_lens) {
-          console.log('🔍 自动触发意图透镜分析...')
-          try {
-            // 确保已有 meta_analysis
-            const metaResponse = await $fetch(`${config.public.apiBase}/api/v1/meta-analysis/analyze`, {
-              method: 'POST',
-              body: {
-                title: title.value || '未命名文章',
-                author: '未知作者',
-                full_text: articleContent,
-                user_id: user.value.id
-              }
-            })
-
-            if (metaResponse.meta_analysis?.id) {
-              await $fetch(`${config.public.apiBase}/api/v1/thinking-lens/apply`, {
-                method: 'POST',
-                body: {
-                  meta_analysis_id: metaResponse.meta_analysis.id,
-                  lens_type: 'author_stance',
-                  full_text: articleContent
-                }
-              })
-              console.log('✅ 意图透镜分析完成')
-            }
-          } catch (error) {
-            console.error('❌ 意图透镜分析失败:', error)
+        }).catch(err => {
+          console.warn('获取分析偏好失败:', err)
+        })
+      } else if (analysisPreferences.value?.auto_meta_analysis) {
+        // 已有偏好设置，立即触发
+        console.log('🔍 自动触发元视角分析...')
+        $fetch(`${config.public.apiBase}/api/v1/meta-analysis/analyze`, {
+          method: 'POST',
+          body: {
+            title: title.value || '未命名文章',
+            author: '未知作者',
+            full_text: articleContent
           }
-        }
+        }).then(metaResponse => {
+          if (metaResponse.status === 'completed') {
+            console.log('✅ 元视角分析完成（来自缓存）')
+          } else if (metaResponse.status === 'pending') {
+            console.log('🔄 元视角分析已提交，任务ID:', metaResponse.task_id)
+          }
+        }).catch(error => {
+          console.error('❌ 元视角分析失败:', error)
+        })
       }
 
       // 如果是已存在的文章且有历史洞察，加载历史记录
       if (!response.article.is_new) {
-        await loadInsightHistory(response.article.id, user.value.id)
+        await loadInsightHistory(response.article.id)
         console.log(`📚 已加载历史洞察`)
       }
     } catch (error) {
@@ -635,9 +645,10 @@ useHead({
 })
 
 // 监听文章 ID 变化，自动加载历史洞察
+// 支持示例文章（无需登录）和普通文章（需要登录）
 watch(() => currentArticleId.value, async (articleId) => {
-  if (articleId && user.value?.id) {
-    await loadInsightHistory(articleId, user.value.id)
+  if (articleId) {
+    await loadInsightHistory(articleId)
     if (insightHistory.value.length > 0) {
       console.log(`📚 文章 ${articleId} 有 ${insightHistory.value.length} 条历史洞察`)
     }
@@ -653,6 +664,81 @@ const route = useRoute()
 onMounted(async () => {
   // 建立 SSE 连接（用于接收分析完成通知）
   connect()
+
+  // 预加载用户偏好设置（避免首次提交文章时阻塞）
+  if (user.value?.id && !analysisPreferences.value) {
+    fetchPreferences(user.value.id).then(prefs => {
+      analysisPreferences.value = prefs
+      console.log('✅ 用户偏好设置已预加载')
+    }).catch(err => {
+      console.warn('预加载用户偏好失败:', err)
+    })
+  }
+
+  // 注册元视角分析完成回调
+  onMetaAnalysisComplete(async (articleId, metaAnalysis) => {
+    console.log(`📬 收到元视角分析完成通知，文章 ID: ${articleId}`)
+
+    // 更新元视角分析数据（使用 useState 直接访问共享状态）
+    const metaAnalysisData = useState<any>('meta-analysis-data', () => null)
+    const isMetaAnalyzing = useState<boolean>('meta-view-analyzing', () => false)
+
+    metaAnalysisData.value = metaAnalysis
+    isMetaAnalyzing.value = false
+
+    console.log('✅ 元视角分析结果已更新')
+
+    // 如果AI生成了标题，更新文章标题
+    if (metaAnalysis.generated_title) {
+      title.value = metaAnalysis.generated_title
+      console.log('✅ 已更新AI生成的标题:', metaAnalysis.generated_title)
+    }
+  })
+
+  // 注册思维透镜完成回调
+  onLensComplete(async (lensType, lensResult) => {
+    console.log(`📬 收到 ${lensType} 透镜分析完成通知`)
+
+    // 获取可写的状态引用
+    const writableLensResults = useState<Map<any, any>>('lens-results')
+    const writableLoadingLenses = useState<Set<any>>('loading-lenses')
+
+    // 存储透镜结果
+    writableLensResults.value.set(lensType, lensResult)
+
+    // 移除加载状态 - 创建新Set触发响应式更新
+    const newLoadingSet = new Set(writableLoadingLenses.value)
+    newLoadingSet.delete(lensType)
+    writableLoadingLenses.value = newLoadingSet
+
+    console.log(`🔄 加载状态已更新，剩余加载中的透镜: ${writableLoadingLenses.value.size}`)
+
+    // 如果该透镜当前已启用，应用高亮
+    if (enabledLenses.value.has(lensType as any)) {
+      const containerEl = document.querySelector('.article-content')
+      if (containerEl) {
+        renderHighlightsByType(containerEl as HTMLElement, lensResult.highlights, lensType as any)
+        console.log(`✨ ${lensType} 透镜高亮已应用`)
+      }
+    }
+
+    console.log(`✅ ${lensType} 透镜结果已保存，共 ${lensResult.highlights?.length || 0} 个高亮`)
+  })
+
+  // 注册任务失败回调
+  onTaskFailed((taskType, error) => {
+    console.error(`❌ ${taskType} 任务失败:`, error)
+    // 显示错误提示给用户
+    const taskNames: Record<string, string> = {
+      'article_analysis': '文章分析',
+      'article_reanalysis': '文章重新分析',
+      'meta_analysis': '元视角分析',
+      'thinking_lens_argument_structure': '论证结构透镜',
+      'thinking_lens_author_stance': '作者意图透镜'
+    }
+    const taskName = taskNames[taskType] || '分析'
+    console.log(`⚠️ ${taskName}失败: ${error}`)
+  })
 
   register('escape', () => {
     if (showIntentButtons.value) {

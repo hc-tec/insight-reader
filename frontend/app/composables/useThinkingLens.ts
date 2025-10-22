@@ -39,41 +39,66 @@ export const useThinkingLens = () => {
   const lensError = useState<string | null>('lens-error', () => null)
 
   /**
-   * 通过文章ID加载透镜分析（使用新的API端点）
+   * 通过文章ID加载透镜分析（异步版本）
    */
   const loadLens = async (
     articleId: number,
     lensType: LensType,
     forceReanalyze: boolean = false
   ) => {
-    loadingLenses.value.add(lensType)
+    // 添加加载状态 - 创建新Set触发响应式
+    const newLoadingSet = new Set(loadingLenses.value)
+    newLoadingSet.add(lensType)
+    loadingLenses.value = newLoadingSet
     lensError.value = null
 
     try {
-      const response = await $fetch<{ status: string; lens_result: LensResult }>(
+      const response = await $fetch<{
+        status: string
+        lens_result: LensResult | null
+        task_id: string | null
+      }>(
         `${config.public.apiBase}/api/v1/articles/${articleId}/thinking-lens/${lensType}`,
         {
           params: { force_reanalyze: forceReanalyze }
         }
       )
 
-      if (response.status === 'success') {
-        lensResults.value.set(lensType, response.lens_result)
-        console.log(`✅ ${lensType} 透镜加载成功:`, response.lens_result.highlights.length, '个高亮')
+      if (response.status === 'completed') {
+        // 立即返回结果（来自缓存）
+        lensResults.value.set(lensType, response.lens_result!)
+
+        // 移除加载状态 - 创建新Set触发响应式
+        const updatedLoadingSet = new Set(loadingLenses.value)
+        updatedLoadingSet.delete(lensType)
+        loadingLenses.value = updatedLoadingSet
+
+        console.log(`✅ ${lensType} 透镜加载成功（来自缓存）:`, response.lens_result!.highlights.length, '个高亮')
         return response.lens_result
+
+      } else if (response.status === 'pending') {
+        // 异步任务已提交，等待SSE通知
+        console.log(`🔄 ${lensType} 透镜分析已提交，任务ID: ${response.task_id}`)
+        // 保持 loading 状态，等待 SSE 回调完成后再删除
+        // SSE回调会自动处理结果并更新 lensResults
+        return null
       }
 
     } catch (error: any) {
       console.error('❌ 透镜加载失败:', error)
       lensError.value = error.data?.detail || error.message || '透镜加载失败'
+
+      // 移除加载状态 - 创建新Set触发响应式
+      const errorLoadingSet = new Set(loadingLenses.value)
+      errorLoadingSet.delete(lensType)
+      loadingLenses.value = errorLoadingSet
+
       throw error
-    } finally {
-      loadingLenses.value.delete(lensType)
     }
   }
 
   /**
-   * 切换透镜 - 支持同时启用多个透镜
+   * 切换透镜 - 支持同时启用多个透镜（异步版本）
    */
   const toggleLens = async (articleId: number, lensType: LensType, containerEl: HTMLElement) => {
     if (enabledLenses.value.has(lensType)) {
@@ -83,16 +108,28 @@ export const useThinkingLens = () => {
       console.log(`🔴 ${lensType} 透镜已关闭`)
     } else {
       // 开启透镜
+      // 先标记为已启用（这样SSE回调才会应用高亮）
+      enabledLenses.value.add(lensType)
+
       // 检查是否已有数据，没有则加载
       if (!lensResults.value.has(lensType)) {
-        await loadLens(articleId, lensType)
-      }
+        const lensData = await loadLens(articleId, lensType)
 
-      const lensData = lensResults.value.get(lensType)
-      if (lensData) {
-        renderHighlightsByType(containerEl, lensData.highlights, lensType)
-        enabledLenses.value.add(lensType)
-        console.log(`🟢 ${lensType} 透镜已开启`)
+        if (lensData) {
+          // 立即返回结果（来自缓存），应用高亮
+          renderHighlightsByType(containerEl, lensData.highlights, lensType)
+          console.log(`🟢 ${lensType} 透镜已开启（来自缓存）`)
+        } else {
+          // pending状态，等待SSE回调
+          console.log(`🔄 ${lensType} 透镜分析中，完成后将自动应用高亮`)
+        }
+      } else {
+        // 已有数据，直接应用
+        const lensData = lensResults.value.get(lensType)
+        if (lensData) {
+          renderHighlightsByType(containerEl, lensData.highlights, lensType)
+          console.log(`🟢 ${lensType} 透镜已开启`)
+        }
       }
     }
   }
@@ -106,7 +143,7 @@ export const useThinkingLens = () => {
   }
 
   /**
-   * 渲染高亮到DOM（使用文本匹配算法）
+   * 渲染高亮到DOM（使用批量优化算法）
    */
   const renderHighlights = (containerEl: HTMLElement, highlights: Highlight[]) => {
     if (!containerEl || highlights.length === 0) {
@@ -119,17 +156,13 @@ export const useThinkingLens = () => {
       removeHighlights(containerEl)
 
       console.log('🔍 开始渲染', highlights.length, '个高亮')
+      const startTime = performance.now()
 
-      // 使用文本匹配算法渲染每个高亮
-      for (const highlight of highlights) {
-        try {
-          highlightTextInDOM(containerEl, highlight)
-        } catch (error) {
-          console.error('❌ 插入高亮失败:', highlight.text.substring(0, 30), error)
-        }
-      }
+      // 使用批量渲染优化
+      renderHighlightsBatch(containerEl, highlights)
 
-      console.log('✅ 高亮渲染完成')
+      const elapsed = performance.now() - startTime
+      console.log(`✅ 高亮渲染完成，耗时: ${elapsed.toFixed(0)}ms`)
 
     } catch (error) {
       console.error('❌ 高亮渲染失败:', error)
@@ -137,7 +170,7 @@ export const useThinkingLens = () => {
   }
 
   /**
-   * 按类型渲染高亮（支持多透镜同时显示）
+   * 按类型渲染高亮（支持多透镜同时显示，批量优化版本）
    */
   const renderHighlightsByType = (containerEl: HTMLElement, highlights: Highlight[], lensType: LensType) => {
     if (!containerEl || highlights.length === 0) {
@@ -147,20 +180,84 @@ export const useThinkingLens = () => {
 
     try {
       console.log(`🔍 开始渲染 ${lensType}:`, highlights.length, '个高亮')
+      const startTime = performance.now()
 
-      // 使用文本匹配算法渲染每个高亮
-      for (const highlight of highlights) {
-        try {
-          highlightTextInDOM(containerEl, highlight, lensType)
-        } catch (error) {
-          console.error('❌ 插入高亮失败:', highlight.text.substring(0, 30), error)
-        }
-      }
+      // 批量渲染：只遍历DOM一次
+      renderHighlightsBatch(containerEl, highlights, lensType)
 
-      console.log(`✅ ${lensType} 高亮渲染完成`)
+      const elapsed = performance.now() - startTime
+      console.log(`✅ ${lensType} 高亮渲染完成，耗时: ${elapsed.toFixed(0)}ms`)
 
     } catch (error) {
       console.error('❌ 高亮渲染失败:', error)
+    }
+  }
+
+  /**
+   * 批量渲染高亮（性能优化：只遍历DOM一次）
+   */
+  const renderHighlightsBatch = (containerEl: HTMLElement, highlights: Highlight[], lensType?: LensType) => {
+    // 创建高亮文本到高亮对象的映射
+    const highlightMap = new Map<string, Highlight>()
+    highlights.forEach(h => {
+      const key = h.text.trim()
+      if (key) highlightMap.set(key, h)
+    })
+
+    // 只遍历DOM一次，收集所有文本节点
+    const walker = document.createTreeWalker(
+      containerEl,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          const parent = node.parentElement
+          if (parent?.classList.contains('meta-view-highlight')) {
+            return NodeFilter.FILTER_REJECT
+          }
+          return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT
+        }
+      }
+    )
+
+    const textNodes: Text[] = []
+    let currentNode: Node | null
+    while ((currentNode = walker.nextNode())) {
+      textNodes.push(currentNode as Text)
+    }
+
+    // 批量处理文本节点
+    const processed = new Set<string>()
+    for (const textNode of textNodes) {
+      const text = textNode.textContent || ''
+
+      // 检查是否包含任何待高亮文本
+      for (const [searchText, highlight] of highlightMap.entries()) {
+        if (processed.has(searchText)) continue
+
+        const index = text.indexOf(searchText)
+        if (index !== -1) {
+          const beforeText = text.substring(0, index)
+          const matchText = text.substring(index, index + searchText.length)
+          const afterText = text.substring(index + searchText.length)
+
+          const parent = textNode.parentNode
+          if (parent) {
+            const highlightEl = createHighlightElement(matchText, highlight, lensType)
+
+            if (beforeText) {
+              parent.insertBefore(document.createTextNode(beforeText), textNode)
+            }
+            parent.insertBefore(highlightEl, textNode)
+            if (afterText) {
+              parent.insertBefore(document.createTextNode(afterText), textNode)
+            }
+            parent.removeChild(textNode)
+
+            processed.add(searchText)
+            break // 处理完这个文本节点，继续下一个
+          }
+        }
+      }
     }
   }
 
@@ -310,7 +407,7 @@ export const useThinkingLens = () => {
    */
   const clearLensResults = () => {
     lensResults.value.clear()
-    activeLens.value = null
+    enabledLenses.value.clear()
     lensError.value = null
   }
 

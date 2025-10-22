@@ -2,54 +2,31 @@
 """
 句子拆分工具
 
-使用 stanza NLP 库进行高质量的中文分句
+使用优化的规则方法进行中文分句（轻量级，零依赖）
 """
 
 import re
 from typing import List, Dict
-import stanza
-from functools import lru_cache
-
-# 全局 stanza pipeline
-_nlp_pipeline = None
-
-
-def _get_nlp_pipeline():
-    """获取或初始化 stanza pipeline（单例模式）"""
-    global _nlp_pipeline
-    if _nlp_pipeline is None:
-        print("🔧 正在初始化 Stanza 中文分句模型...")
-        try:
-            # 尝试加载中文模型
-            _nlp_pipeline = stanza.Pipeline(
-                lang='zh',
-                processors='tokenize',  # 只使用分句功能，速度更快
-                tokenize_no_ssplit=False,  # 启用句子拆分
-                use_gpu=False,  # 根据你的环境可以设置为 True
-                download_method=None  # 不自动下载，假设已安装
-            )
-            print("✅ Stanza 中文分句模型加载成功")
-        except Exception as e:
-            print(f"⚠️ Stanza 模型加载失败: {e}")
-            print("💡 请运行: python -m stanza.download('zh')")
-            raise RuntimeError(
-                "Stanza 中文模型未安装。请运行: python -m stanza.download('zh')"
-            ) from e
-    return _nlp_pipeline
 
 
 class SentenceSplitter:
-    """句子拆分器 - 使用 Stanza NLP 进行高质量中文分句"""
+    """句子拆分器 - 使用规则方法进行高质量中文分句"""
+
+    # 常见英文缩写
+    ABBREVIATIONS = [
+        'Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.', 'Sr.', 'Jr.',
+        'etc.', 'vs.', 'e.g.', 'i.e.', 'U.S.', 'U.K.',
+        'Inc.', 'Ltd.', 'Co.', 'Corp.', 'St.', 'Ave.',
+        'Ph.D.', 'M.D.', 'B.A.', 'M.A.', 'D.C.'
+    ]
 
     @staticmethod
-    def split_into_sentences(text: str, use_stanza: bool = True) -> List[str]:
+    def split_into_sentences(text: str) -> List[str]:
         """
         将文本拆分为句子列表
 
         Args:
             text: 纯文本（不包含 HTML 标签）
-            use_stanza: 是否使用 stanza NLP（默认 True）
-                       False 则使用简单正则表达式（更快但精度低）
 
         Returns:
             句子数组
@@ -60,100 +37,146 @@ class SentenceSplitter:
         # 预处理：统一换行符
         text = text.replace('\r\n', '\n').replace('\r', '\n')
 
-        if use_stanza:
-            return SentenceSplitter._split_with_stanza(text)
-        else:
-            return SentenceSplitter._split_with_regex(text)
+        return SentenceSplitter._split_with_enhanced_rules(text)
 
     @staticmethod
-    def _split_with_stanza(text: str) -> List[str]:
+    def _split_with_enhanced_rules(text: str) -> List[str]:
         """
-        使用 Stanza NLP 进行分句（推荐）
+        使用增强规则进行分句
 
-        优点：
-        - 准确识别中文句子边界
-        - 正确处理引号、括号内的句子
-        - 处理省略号、感叹号、问号的复杂组合
-        - 避免误拆分（如人名中的点、缩写等）
+        规则优化：
+        1. 识别中文句子结束标点：。！？；…
+        2. 识别英文句子结束标点：.!?;
+        3. 处理引号、括号内的句子
+        4. 处理省略号、感叹号的组合
+        5. 处理英文缩写（避免误拆分）
+        6. 处理换行符（强制句子边界）
+        7. 处理数字、日期（避免误拆分）
         """
-        try:
-            nlp = _get_nlp_pipeline()
-            doc = nlp(text)
+        sentences = []
 
-            sentences = []
-            for sentence in doc.sentences:
-                sentence_text = sentence.text.strip()
-                if sentence_text:
-                    sentences.append(sentence_text)
+        # 步骤1: 按段落预处理
+        paragraphs = text.split('\n\n')
 
-            return sentences
+        for para in paragraphs:
+            if not para.strip():
+                continue
 
-        except Exception as e:
-            print(f"⚠️ Stanza 分句失败，回退到正则表达式方法: {e}")
-            return SentenceSplitter._split_with_regex(text)
+            # 步骤2: 在段落内进行分句
+            para_sentences = SentenceSplitter._split_paragraph(para)
+            sentences.extend(para_sentences)
+
+        return [s.strip() for s in sentences if s.strip()]
 
     @staticmethod
-    def _split_with_regex(text: str) -> List[str]:
-        """
-        使用正则表达式进行分句（快速但精度较低）
+    def _split_paragraph(text: str) -> List[str]:
+        """在段落内进行精细分句"""
 
-        规则：
-        - 中文：按 。！？…\n 拆分
-        - 英文：按 .!?\n 拆分，处理常见缩写
-        - 保留标点符号
-        - 过滤空句子
-        """
-        # 常见英文缩写
-        ABBREVIATIONS = [
-            'Mr.', 'Mrs.', 'Ms.', 'Dr.', 'Prof.', 'Sr.', 'Jr.',
-            'etc.', 'vs.', 'e.g.', 'i.e.', 'U.S.', 'U.K.',
-            'Inc.', 'Ltd.', 'Co.', 'Corp.'
-        ]
+        # 句子分隔符的正则模式
+        # 匹配：中文标点(。！？；…) + 可选空白
+        #      英文标点(.!?;) + 空白
+        #      换行符
+        pattern = r'([。！？；…]+\s*|[.!?]+\s+|\n)'
 
-        # 句子分隔符（中文和英文）
-        sentence_delimiter_pattern = r'([。！？!?.…]+[\s\n]|[\n])'
-
-        # 拆分并保留分隔符
-        parts = re.split(sentence_delimiter_pattern, text)
+        parts = re.split(pattern, text)
 
         sentences = []
-        current_sentence = ''
+        current = ''
+        i = 0
 
-        for i in range(len(parts)):
+        while i < len(parts):
             part = parts[i]
 
             if not part:
+                i += 1
                 continue
 
             # 如果是分隔符
-            if re.match(sentence_delimiter_pattern, part):
-                current_sentence += part
+            if re.match(pattern, part):
+                current += part
 
-                # 检查是否是真正的句子结束（排除缩写等）
-                next_part = parts[i + 1] if i + 1 < len(parts) else None
-                if _is_valid_sentence_end(current_sentence, next_part, ABBREVIATIONS):
-                    trimmed = current_sentence.strip()
-                    if trimmed:
-                        sentences.append(trimmed)
-                        current_sentence = ''
+                # 检查是否应该在此处断句
+                next_part = parts[i + 1] if i + 1 < len(parts) else ''
+
+                if SentenceSplitter._should_break(current, next_part):
+                    sentences.append(current.strip())
+                    current = ''
+                # 否则继续累积
             else:
-                current_sentence += part
+                current += part
 
-        # 处理最后一个句子
-        trimmed = current_sentence.strip()
-        if trimmed:
-            sentences.append(trimmed)
+            i += 1
 
-        return [s for s in sentences if s]
+        # 添加最后一个句子
+        if current.strip():
+            sentences.append(current.strip())
+
+        return sentences
 
     @staticmethod
-    def split_into_paragraphs(text: str, use_stanza: bool = True) -> List[Dict]:
+    def _should_break(current: str, next_part: str) -> bool:
+        """
+        判断是否应该在当前位置断句
+
+        Args:
+            current: 当前累积的文本
+            next_part: 下一个文本片段
+
+        Returns:
+            是否应该断句
+        """
+        current = current.strip()
+
+        # 空文本，不断句
+        if not current:
+            return False
+
+        # 以换行符结束，强制断句
+        if current.endswith('\n'):
+            return True
+
+        # 检查是否以英文缩写结尾
+        for abbr in SentenceSplitter.ABBREVIATIONS:
+            if current.endswith(abbr):
+                # 如果下一部分以小写字母开头，不断句
+                if next_part and re.match(r'^[a-z]', next_part.strip()):
+                    return False
+
+        # 检查是否是数字 + 点（如：3.14, 1.5）
+        if re.search(r'\d+\.\s*$', current):
+            if next_part and re.match(r'^\d', next_part.strip()):
+                return False
+
+        # 检查是否在引号或括号内
+        # 如果引号、括号未闭合，不断句
+        open_quotes = current.count('"') + current.count('"') + current.count('「')
+        close_quotes = current.count('"') + current.count('"') + current.count('」')
+        open_parens = current.count('(') + current.count('（')
+        close_parens = current.count(')') + current.count('）')
+
+        if open_quotes % 2 != 0 or open_quotes != close_quotes:
+            return False
+        if open_parens != close_parens:
+            return False
+
+        # 以中文句子结束标点结尾，断句
+        if re.search(r'[。！？；…]$', current):
+            return True
+
+        # 以英文句子结束标点 + 空白结尾，断句
+        if re.search(r'[.!?]\s+$', current):
+            return True
+
+        # 默认不断句
+        return False
+
+    @staticmethod
+    def split_into_paragraphs(text: str) -> List[Dict]:
         """
         将纯文本拆分为段落和句子
 
         Args:
             text: 纯文本
-            use_stanza: 是否使用 stanza NLP（默认 True）
 
         Returns:
             段落数组，每个段落包含句子列表
@@ -175,10 +198,7 @@ class SentenceSplitter:
 
         for paragraph_index, paragraph_text in enumerate(raw_paragraphs):
             # 拆分该段落的句子
-            sentence_texts = SentenceSplitter.split_into_sentences(
-                paragraph_text,
-                use_stanza=use_stanza
-            )
+            sentence_texts = SentenceSplitter.split_into_sentences(paragraph_text)
 
             sentences = []
             for sentence_text in sentence_texts:
@@ -197,55 +217,28 @@ class SentenceSplitter:
         return paragraphs
 
 
-def _is_valid_sentence_end(sentence: str, next_part: str = None, abbreviations: List[str] = None) -> bool:
-    """
-    判断是否为有效的句子结束
-
-    排除常见缩写：
-    - Mr. Mrs. Dr. Prof. etc.
-    - U.S. U.K. etc.
-    """
-    if abbreviations is None:
-        abbreviations = []
-
-    # 如果句子以换行结束，一定是句子结束
-    if sentence.endswith('\n'):
-        return True
-
-    # 检查是否以缩写结尾
-    for abbr in abbreviations:
-        if sentence.strip().endswith(abbr):
-            # 如果下一个部分以小写字母开头，说明不是句子结束
-            if next_part and re.match(r'^[a-z]', next_part.strip()):
-                return False
-
-    return True
-
-
 # 便捷函数
-def split_sentences(text: str, use_stanza: bool = True) -> List[str]:
+def split_sentences(text: str) -> List[str]:
     """
     拆分句子
 
     Args:
         text: 输入文本
-        use_stanza: 是否使用 stanza NLP（默认 True，推荐）
 
     Returns:
         句子列表
     """
-    return SentenceSplitter.split_into_sentences(text, use_stanza=use_stanza)
+    return SentenceSplitter.split_into_sentences(text)
 
 
-def split_paragraphs(text: str, use_stanza: bool = True) -> List[Dict]:
+def split_paragraphs(text: str) -> List[Dict]:
     """
     拆分段落和句子
 
     Args:
         text: 输入文本
-        use_stanza: 是否使用 stanza NLP（默认 True，推荐）
 
     Returns:
         段落和句子的结构化数据
     """
-    return SentenceSplitter.split_into_paragraphs(text, use_stanza=use_stanza)
+    return SentenceSplitter.split_into_paragraphs(text)

@@ -58,22 +58,16 @@ onMounted(async () => {
   }
 
   try {
-    // 使用 token 获取用户信息
-    const response = await fetch(`${config.public.apiBase}/api/v1/auth/me`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    })
-
-    if (!response.ok) {
-      throw new Error('验证令牌失败')
-    }
-
-    const user = await response.json()
-
-    // 保存到 localStorage
+    // 先保存 token 到 localStorage（这样 plugin 可以自动添加 Authorization header）
     if (process.client) {
       localStorage.setItem('insightreader_token', token)
+    }
+
+    // 使用 $fetch 获取用户信息（plugin 会自动添加 Authorization header）
+    const user = await $fetch(`${config.public.apiBase}/api/v1/auth/me`)
+
+    // 保存用户信息到 localStorage
+    if (process.client) {
       localStorage.setItem('insightreader_user', JSON.stringify(user))
     }
 
@@ -88,6 +82,10 @@ onMounted(async () => {
   } catch (err) {
     isProcessing.value = false
     error.value = err instanceof Error ? err.message : '认证失败'
+    // 认证失败时清除 token
+    if (process.client) {
+      localStorage.removeItem('insightreader_token')
+    }
   }
 })
 

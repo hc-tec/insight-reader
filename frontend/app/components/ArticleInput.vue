@@ -68,6 +68,18 @@
               <div class="flex-1 h-px bg-gradient-to-r from-gray-200 to-transparent"></div>
             </div>
             <div class="flex flex-wrap gap-2">
+              <!-- 示例文章滚动按钮 -->
+              <button
+                @click="scrollToDemos"
+                class="group/btn inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 border border-emerald-200 hover:border-emerald-300 transition-all text-sm font-medium text-emerald-700 hover:text-emerald-800 shadow-sm"
+              >
+                <span>✨</span>
+                <span>查看示例文章</span>
+                <svg class="w-4 h-4 opacity-100 transition-transform group-hover/btn:translate-y-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+              </button>
+
               <button
                 v-for="example in examples"
                 :key="example.label"
@@ -207,18 +219,117 @@
           </div>
         </div>
       </div>
+
+      <!-- 示例文章列表 -->
+      <div ref="demoArticlesSection" class="mt-24">
+        <!-- Section Header -->
+        <div class="text-center mb-12">
+          <div class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-emerald-50/80 backdrop-blur-sm border border-emerald-200/50 shadow-sm mb-6">
+            <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+            <span class="text-sm font-medium text-emerald-700">无需注册，立即体验</span>
+          </div>
+
+          <h2 class="text-4xl md:text-5xl font-bold mb-4">
+            <span class="bg-clip-text text-transparent bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900">
+              精选示例文章
+            </span>
+          </h2>
+          <p class="text-lg text-gray-600 max-w-2xl mx-auto">
+            探索 InsightReader 的强大分析能力，一键体验完整的 AI 辅助阅读流程
+          </p>
+        </div>
+
+        <!-- 加载状态 -->
+        <div v-if="demoLoading" class="flex items-center justify-center py-20">
+          <div class="animate-spin h-12 w-12 border-4 border-emerald-600 border-t-transparent rounded-full"></div>
+        </div>
+
+        <!-- 示例文章卡片网格 -->
+        <div v-else-if="demoArticles && demoArticles.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div
+            v-for="article in demoArticles"
+            :key="article.id"
+            @click="handleArticleClick(article.id)"
+            class="group relative cursor-pointer"
+          >
+            <!-- Glow effect on hover -->
+            <div class="absolute -inset-0.5 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-2xl opacity-0 group-hover:opacity-20 blur transition duration-500"></div>
+
+            <div class="relative h-full bg-white/50 backdrop-blur-sm rounded-2xl border border-gray-200/50 p-6 hover:bg-white/80 hover:shadow-xl hover:shadow-emerald-500/10 transition-all duration-300 hover:-translate-y-1">
+              <!-- 徽章 -->
+              <div class="flex items-center gap-2 mb-4">
+                <span class="px-3 py-1 bg-gradient-to-r from-emerald-100 to-teal-100 text-emerald-700 text-xs rounded-full font-medium border border-emerald-200/50">
+                  示例文章
+                </span>
+                <span v-if="article.demo_order" class="px-2.5 py-0.5 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-700 text-xs rounded-full font-bold border border-amber-200/50">
+                  #{{ article.demo_order }}
+                </span>
+              </div>
+
+              <!-- 标题 -->
+              <h3 class="text-xl font-semibold text-gray-900 mb-3 group-hover:text-emerald-700 transition-colors line-clamp-2">
+                {{ article.title }}
+              </h3>
+
+              <!-- 作者 -->
+              <div v-if="article.author" class="flex items-center gap-2 text-sm text-gray-600 mb-4">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span>{{ article.author }}</span>
+              </div>
+
+              <!-- 底部信息 -->
+              <div class="flex items-center justify-between pt-4 border-t border-gray-200/50">
+                <div class="flex items-center gap-1.5 text-sm text-gray-500">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <span>{{ formatNumber(article.word_count || 0) }} 字</span>
+                </div>
+
+                <div class="flex items-center gap-2 text-sm font-medium text-emerald-600 group-hover:text-emerald-700">
+                  <span>立即体验</span>
+                  <svg class="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else class="text-center py-20">
+          <div class="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center">
+            <svg class="w-10 h-10 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+            </svg>
+          </div>
+          <h3 class="text-xl font-semibold text-gray-900 mb-2">暂无示例文章</h3>
+          <p class="text-gray-600">管理员正在精心准备示例内容...</p>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { DemoArticle } from '~/composables/useDemoArticles'
+
 // Props & Emits
 const emit = defineEmits<{
   submit: [content: string]
+  'article-click': [articleId: number]
 }>()
 
 // State
 const content = ref('')
+const demoArticlesSection = ref<HTMLElement | null>(null)
+
+// 示例文章数据
+const { getDemoArticles, loading: demoLoading } = useDemoArticles()
+const demoArticles = ref<DemoArticle[]>([])
 
 // Examples
 const examples = [
@@ -249,6 +360,39 @@ const handleSubmit = () => {
   if (!canSubmit.value) return
   emit('submit', content.value)
 }
+
+const scrollToDemos = () => {
+  if (demoArticlesSection.value) {
+    demoArticlesSection.value.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    })
+  }
+}
+
+const handleArticleClick = (articleId: number) => {
+  emit('article-click', articleId)
+}
+
+const formatNumber = (num: number) => {
+  if (num >= 10000) {
+    return `${(num / 10000).toFixed(1)}万`
+  }
+  return num.toString()
+}
+
+// 加载示例文章
+const fetchDemoArticles = async () => {
+  const response = await getDemoArticles(6, 0)
+  if (response) {
+    demoArticles.value = response.articles
+  }
+}
+
+// 页面加载时获取示例文章
+onMounted(() => {
+  fetchDemoArticles()
+})
 </script>
 
 <style scoped>

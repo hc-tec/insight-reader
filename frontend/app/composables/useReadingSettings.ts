@@ -42,7 +42,7 @@ export const useReadingSettings = () => {
     fontFamily: FONT_FAMILIES.cangErJinKai,
     fontSize: FONT_SIZES.medium,
     lineHeight: LINE_HEIGHTS.medium,
-    singleSentencePerLine: false,
+    singleSentencePerLine: true,
   }
 
   // 从 localStorage 加载设置

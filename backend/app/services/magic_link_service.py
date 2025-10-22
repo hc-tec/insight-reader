@@ -3,10 +3,13 @@ from datetime import datetime, timedelta
 from itsdangerous import URLSafeTimedSerializer
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from sqlalchemy.orm import Session
+import logging
 
 from app.config import settings
 from app.models.models import MagicLink
 import secrets
+
+logger = logging.getLogger(__name__)
 
 
 # 邮件配置
@@ -18,6 +21,7 @@ mail_config = ConnectionConfig(
     MAIL_SERVER=settings.mail_server,
     MAIL_STARTTLS=settings.mail_tls,
     MAIL_SSL_TLS=settings.mail_ssl,
+    MAIL_FROM_NAME=settings.mail_from_name,
     USE_CREDENTIALS=True,
     VALIDATE_CERTS=True
 )
@@ -53,8 +57,8 @@ async def create_magic_link(email: str, db: Session) -> str:
 
 async def send_magic_link_email(email: str, token: str):
     """发送魔法链接邮件"""
-    # 构建登录链接
-    login_url = f"{settings.frontend_url}/auth/magic?token={token}"
+    # 构建登录链接（前端使用 hash 路由）
+    login_url = f"{settings.frontend_url}/#/auth/magic?token={token}"
 
     # 邮件内容
     html_content = f"""
@@ -155,7 +159,20 @@ async def send_magic_link_email(email: str, token: str):
         subtype="html"
     )
 
-    await fastmail.send_message(message)
+    try:
+        await fastmail.send_message(message)
+        logger.info(f"[Email] 魔法链接邮件已发送到: {email}")
+    except Exception as e:
+        error_msg = str(e)
+        # QQ邮箱的特殊响应：虽然报错但邮件实际已发送成功
+        if "Malformed SMTP response line" in error_msg or "\\x00" in error_msg:
+            logger.warning(f"[Email] QQ邮箱特殊响应（邮件已发送）: {error_msg[:100]}")
+            logger.info(f"[Email] 魔法链接邮件已发送到: {email}")
+            # 这是QQ邮箱的正常响应，邮件已发送成功，忽略错误
+        else:
+            # 其他错误需要抛出
+            logger.error(f"[Email] 发送邮件失败: {error_msg}")
+            raise
 
 
 async def verify_magic_link(token: str, db: Session) -> str | None:

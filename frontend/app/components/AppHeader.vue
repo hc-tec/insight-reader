@@ -193,6 +193,16 @@
                   </button>
                 </NuxtLink>
 
+                <!-- 管理员专属：示例文章管理 -->
+                <NuxtLink v-if="isAdmin" to="/admin/demo" @click="showUserMenu = false">
+                  <button class="w-full text-left px-4 py-2.5 text-sm hover:bg-purple-50 transition-colors flex items-center gap-3 border-t border-gray-100">
+                    <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                    <span class="text-purple-700 font-medium">示例文章管理</span>
+                  </button>
+                </NuxtLink>
+
                 <button
                   @click="handleLogout"
                   class="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors flex items-center gap-3 border-t border-gray-100"
@@ -236,6 +246,7 @@
 const router = useRouter()
 const { isReading, clearArticle } = useArticle()
 const { isAuthenticated, user, logout } = useAuth()
+const config = useRuntimeConfig()
 
 const emit = defineEmits<{
   'open-settings': []
@@ -262,6 +273,17 @@ const userInitial = computed(() => {
 
 const displayName = computed(() => {
   return user.value?.username || user.value?.email?.split('@')[0] || '用户'
+})
+
+// 检查当前用户是否为管理员
+const isAdmin = computed(() => {
+  if (!user.value?.email) return false
+
+  // 从环境变量读取管理员邮箱列表
+  const adminEmailsEnv = config.public.adminEmails || 'admin@insightreader.com'
+  const adminEmails = adminEmailsEnv.split(',').map((email: string) => email.trim())
+
+  return adminEmails.includes(user.value.email)
 })
 
 const handleBack = () => {

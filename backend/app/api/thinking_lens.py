@@ -1,17 +1,71 @@
 """
-思维透镜 API 路由
+思维透镜 API 路由（异步版本）
 """
 
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.db.database import get_db
+from app.db.database import get_db, SessionLocal
 from app.services.thinking_lens_service import ThinkingLensService
 from app.services.meta_analysis_service import MetaAnalysisService
 from app.models.models import Article, MetaAnalysis
+from app.core.task_manager import task_manager
 from pydantic import BaseModel
 from datetime import datetime
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+# ============= 后台任务函数 =============
+
+async def thinking_lens_task(
+    meta_analysis_id: int,
+    lens_type: str,
+    full_text: str,
+    language: str
+):
+    """
+    后台思维透镜分析任务
+
+    Args:
+        meta_analysis_id: 元分析ID
+        lens_type: 透镜类型
+        full_text: 全文
+        language: 语言
+
+    Returns:
+        分析结果
+    """
+    db = SessionLocal()
+
+    try:
+        logger.info(f"[后台任务] 开始思维透镜分析，类型: {lens_type}, 元分析ID: {meta_analysis_id}")
+
+        service = ThinkingLensService(db)
+
+        result = await service.apply_lens(
+            meta_analysis_id=meta_analysis_id,
+            lens_type=lens_type,
+            full_text=full_text,
+            language=language,
+            force_reanalyze=False
+        )
+
+        logger.info(f"[后台任务] 思维透镜分析完成，类型: {lens_type}")
+
+        return {
+            "lens_type": lens_type,
+            "status": "completed",
+            "lens_result": result
+        }
+
+    except Exception as e:
+        logger.error(f"[后台任务] 思维透镜分析失败，类型: {lens_type}, 错误: {str(e)}", exc_info=True)
+        raise
+
+    finally:
+        db.close()
 
 
 class ApplyLensRequest(BaseModel):
@@ -117,13 +171,14 @@ async def get_lens_by_article(
     db: Session = Depends(get_db)
 ):
     """
-    通过文章ID获取或生成透镜分析结果
+    通过文章ID获取或生成透镜分析结果（异步版本）
 
     工作流程：
     1. 获取文章
     2. 确保有 meta_analysis 记录
     3. 检查是否已有透镜结果
-    4. 没有则生成新的透镜分析
+    4. 没有则提交后台分析任务
+    5. 通过SSE通知前端分析完成
 
     Args:
         article_id: 文章ID
@@ -132,7 +187,11 @@ async def get_lens_by_article(
         db: 数据库会话
 
     Returns:
-        透镜分析结果
+        {
+            "status": "completed" | "pending",
+            "lens_result": dict | null,
+            "task_id": str | null
+        }
     """
     # 验证 lens_type
     valid_types = ['argument_structure', 'author_stance']
@@ -153,47 +212,47 @@ async def get_lens_by_article(
     ).first()
 
     if not meta_analysis:
-        # 创建基础的 meta_analysis 记录（如果需要的话）
-        # 或者调用 MetaAnalysisService 进行完整分析
-        meta_service = MetaAnalysisService(db)
-        try:
-            meta_result = await meta_service.analyze_article(
-                title=article.title or "",
-                author=article.author or "",
-                publish_date=article.publish_date.isoformat() if article.publish_date else datetime.utcnow().isoformat(),
-                content=article.content,
-                user_id=article.user_id,
-                source_url=article.source_url,
-                language=article.language
-            )
-            meta_analysis_id = meta_result['id']
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"元信息分析失败: {str(e)}"
-            )
-    else:
-        meta_analysis_id = meta_analysis.id
-
-    # 3. 应用透镜分析
-    lens_service = ThinkingLensService(db)
-
-    try:
-        result = await lens_service.apply_lens(
-            meta_analysis_id=meta_analysis_id,
-            lens_type=lens_type,
-            full_text=article.content,
-            language=article.language,
-            force_reanalyze=force_reanalyze
-        )
-
-        return {
-            "status": "success",
-            "lens_result": result
-        }
-
-    except Exception as e:
+        # 需要先进行元视角分析
         raise HTTPException(
-            status_code=500,
-            detail=f"透镜分析失败: {str(e)}"
+            status_code=400,
+            detail="需要先进行元视角分析。请先调用元视角分析接口。"
         )
+
+    meta_analysis_id = meta_analysis.id
+
+    # 3. 检查是否已有透镜结果
+    if not force_reanalyze:
+        lens_service = ThinkingLensService(db)
+        existing_result = lens_service.get_lens_result(meta_analysis_id, lens_type)
+
+        if existing_result:
+            logger.info(f"[API] 思维透镜结果已存在，文章ID: {article_id}, 类型: {lens_type}")
+            return {
+                "status": "completed",
+                "lens_result": existing_result,
+                "task_id": None
+            }
+
+    # 4. 提交异步透镜分析任务
+    task_id = task_manager.submit_task(
+        f"thinking_lens_{lens_type}",
+        thinking_lens_task,
+        {
+            "article_id": article_id,
+            "meta_analysis_id": meta_analysis_id,
+            "lens_type": lens_type,
+            "user_id": article.user_id
+        },
+        meta_analysis_id,
+        lens_type,
+        article.content,
+        article.language or "zh"
+    )
+
+    logger.info(f"[API] 思维透镜任务已提交，文章ID: {article_id}, 类型: {lens_type}, 任务ID: {task_id}")
+
+    return {
+        "status": "pending",
+        "lens_result": None,
+        "task_id": task_id
+    }

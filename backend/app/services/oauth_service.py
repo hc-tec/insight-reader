@@ -1,7 +1,10 @@
 """OAuth 社交登录服务"""
+import logging
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 # 初始化 OAuth
 config = Config(environ={
@@ -48,7 +51,7 @@ async def get_google_user_info(token: dict) -> dict:
             }
         return {}
     except Exception as e:
-        print(f"Error getting Google user info: {e}")
+        logger.error(f"Error getting Google user info: {e}")
         return {}
 
 
@@ -96,5 +99,5 @@ async def get_github_user_info(token: dict) -> dict:
                 'avatar': user_data.get('avatar_url')
             }
     except Exception as e:
-        print(f"Error getting GitHub user info: {e}")
+        logger.error(f"Error getting GitHub user info: {e}")
         return {}

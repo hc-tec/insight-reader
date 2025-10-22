@@ -16,7 +16,7 @@ export const useFollowUp = () => {
   const currentReasoning = useState<string>('followup-current-reasoning', () => '')
   const error = useState<string | null>('followup-error', () => null)
 
-  // 生成追问按钮
+  // 生成追问按钮（异步版本）
   const generateButtons = async (
     selectedText: string,
     insight: string,
@@ -24,6 +24,28 @@ export const useFollowUp = () => {
   ) => {
     isGeneratingButtons.value = true
     error.value = null
+
+    // 默认按钮（立即显示）
+    const defaultButtons: FollowUpButton[] = [
+      {
+        id: 'example_default',
+        label: '举个例子',
+        icon: '🌰',
+        category: 'example'
+      },
+      {
+        id: 'simplify_default',
+        label: '说得简单点',
+        icon: '🎯',
+        category: 'simplify'
+      },
+      {
+        id: 'extend_default',
+        label: '深入了解',
+        icon: '📚',
+        category: 'extend'
+      }
+    ]
 
     try {
       const request: ButtonGenerationRequest = {
@@ -33,7 +55,7 @@ export const useFollowUp = () => {
         conversation_history: conversationHistory.value
       }
 
-      const response = await $fetch<{ buttons: FollowUpButton[] }>(
+      const response = await $fetch<{ status: string; buttons: FollowUpButton[] | null; task_id: string | null }>(
         `${config.public.apiBase}/api/v1/insights/generate-buttons`,
         {
           method: 'POST',
@@ -41,28 +63,24 @@ export const useFollowUp = () => {
         }
       )
 
-      followUpButtons.value = response.buttons
-      console.log('🎯 生成追问按钮:', response.buttons.length, '个')
+      if (response.status === 'completed' && response.buttons) {
+        // 立即返回结果（缓存或默认）
+        followUpButtons.value = response.buttons
+        isGeneratingButtons.value = false
+        console.log('🎯 生成追问按钮（立即返回）:', response.buttons.length, '个')
+      } else if (response.status === 'pending') {
+        // 先显示默认按钮，等待 SSE 更新
+        followUpButtons.value = defaultButtons
+        console.log('🔄 按钮生成中，任务ID:', response.task_id)
+        // 保持 isGeneratingButtons.value = true，等待 SSE 回调
+      }
+
     } catch (err) {
-      console.error('生成追问按钮失败:', err)
+      console.error('❌ 生成追问按钮失败:', err)
       error.value = err instanceof Error ? err.message : '生成追问按钮失败'
 
       // 使用默认按钮
-      followUpButtons.value = [
-        {
-          id: 'example_default',
-          label: '举个例子',
-          icon: '🌰',
-          category: 'example'
-        },
-        {
-          id: 'simplify_default',
-          label: '说得简单点',
-          icon: '🎯',
-          category: 'simplify'
-        }
-      ]
-    } finally {
+      followUpButtons.value = defaultButtons
       isGeneratingButtons.value = false
     }
   }
@@ -156,14 +174,14 @@ export const useFollowUp = () => {
   }
 
   return {
-    // 状态
-    conversationHistory: readonly(conversationHistory),
-    followUpButtons: readonly(followUpButtons),
-    isGeneratingButtons: readonly(isGeneratingButtons),
-    isGeneratingAnswer: readonly(isGeneratingAnswer),
-    currentAnswer: readonly(currentAnswer),
-    currentReasoning: readonly(currentReasoning),
-    error: readonly(error),
+    // 状态（暴露为可写，以便 SSE 回调更新）
+    conversationHistory,
+    followUpButtons,
+    isGeneratingButtons,
+    isGeneratingAnswer,
+    currentAnswer,
+    currentReasoning,
+    error,
 
     // 方法
     generateButtons,

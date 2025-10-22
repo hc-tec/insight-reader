@@ -3,16 +3,15 @@
 负责应用不同的思维透镜到文章上（论证结构、作者立场）
 """
 
-from openai import OpenAI
+import logging
+from openai import AsyncOpenAI
 from sqlalchemy.orm import Session
 from app.models.models import ThinkingLensResult, MetaAnalysis
 from app.config import settings
 from app.utils.sentence_splitter import split_sentences
-from app.utils.error_logger import log_llm_error
 import json
 import json_repair
 from typing import Dict, List, Optional
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +19,8 @@ logger = logging.getLogger(__name__)
 class ThinkingLensService:
     def __init__(self, db: Session):
         self.db = db
-        # 使用 settings 中的配置初始化 OpenAI 客户端
-        self.client = OpenAI(
+        # 使用 settings 中的配置初始化 AsyncOpenAI 客户端
+        self.client = AsyncOpenAI(
             api_key=settings.openai_api_key,
             base_url=settings.openai_base_url if settings.openai_base_url else None
         )
@@ -264,9 +263,9 @@ class ThinkingLensService:
     async def _call_llm_for_lens(self, system_prompt: str, user_prompt: str) -> Dict:
         """调用 LLM 进行透镜分析"""
 
-        # 使用 settings 中的配置调用 OpenAI API
+        # 使用 settings 中的配置调用 OpenAI API (异步)
         try:
-            response = self.client.chat.completions.create(
+            response = await self.client.chat.completions.create(
                 model=settings.default_model,  # 使用配置中的默认模型
                 messages=[
                     {"role": "system", "content": system_prompt},
@@ -277,17 +276,7 @@ class ThinkingLensService:
                 max_tokens=3000
             )
         except Exception as e:
-            # 记录LLM调用错误
-            log_llm_error(
-                service_name="thinking_lens",
-                model_name=settings.default_model,
-                error=e,
-                request_data={
-                    "system_prompt_length": len(system_prompt),
-                    "user_prompt_length": len(user_prompt)
-                }
-            )
-            logger.error(f"❌ LLM 调用失败: {e}")
+            logger.error(f"LLM调用失败 - thinking_lens - model={settings.default_model}, error={e}")
             raise
 
         # 解析响应
@@ -297,16 +286,7 @@ class ThinkingLensService:
             result = json_repair.repair_json(raw_content, return_objects=True, ensure_ascii=False)
             logger.info("✅ JSON解析成功（使用json_repair）")
         except Exception as e:
-            # 记录JSON解析错误
-            log_llm_error(
-                service_name="thinking_lens",
-                model_name=settings.default_model,
-                error=e,
-                request_data={
-                    "response_content": response.choices[0].message.content[:500]
-                }
-            )
-            logger.error(f"❌ JSON 解析失败: {e}")
+            logger.error(f"JSON解析失败 - thinking_lens - model={settings.default_model}, error={e}")
             raise
 
         # 验证结构

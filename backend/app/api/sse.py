@@ -4,66 +4,17 @@ SSE (Server-Sent Events) 实时通知服务
 用于通知前端分析完成等事件
 """
 
-from fastapi import APIRouter, Query
-from fastapi.responses import StreamingResponse
-from asyncio import Queue
 import asyncio
 import json
 import time
-from typing import Dict
+import logging
+from fastapi import APIRouter, Query, HTTPException
+from fastapi.responses import StreamingResponse
+from app.core.task_manager import task_manager
+from app.utils.auth import verify_token
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# 用户通知队列字典 {user_id: Queue}
-user_queues: Dict[int, Queue] = {}
-
-
-async def get_user_queue(user_id: int) -> Queue:
-    """获取或创建用户的通知队列"""
-    if user_id not in user_queues:
-        user_queues[user_id] = Queue()
-    return user_queues[user_id]
-
-
-async def notify_analysis_complete(user_id: int, article_id: int):
-    """
-    通知用户文章分析完成
-
-    Args:
-        user_id: 用户 ID
-        article_id: 文章 ID
-    """
-    queue = await get_user_queue(user_id)
-    await queue.put({
-        "event": "analysis_complete",
-        "data": {
-            "article_id": article_id,
-            "timestamp": time.time()
-        }
-    })
-    print(f"已通知用户 {user_id} 文章 {article_id} 分析完成")
-
-
-async def notify_analysis_progress(user_id: int, article_id: int, stage: str, progress: int):
-    """
-    通知用户分析进度
-
-    Args:
-        user_id: 用户 ID
-        article_id: 文章 ID
-        stage: 当前阶段（如 "extracting_concepts", "analyzing_arguments"）
-        progress: 进度百分比 (0-100)
-    """
-    queue = await get_user_queue(user_id)
-    await queue.put({
-        "event": "analysis_progress",
-        "data": {
-            "article_id": article_id,
-            "stage": stage,
-            "progress": progress,
-            "timestamp": time.time()
-        }
-    })
 
 
 async def event_generator(user_id: int):
@@ -73,68 +24,95 @@ async def event_generator(user_id: int):
     生成服务器发送事件流，包括：
     - connected: 连接建立事件
     - heartbeat: 心跳保持连接
-    - analysis_complete: 分析完成通知
-    - analysis_progress: 分析进度更新
+    - task_started: 任务开始
+    - task_completed: 任务完成
+    - task_failed: 任务失败
     """
-    queue = await get_user_queue(user_id)
+    # 创建新的 SSE 连接
+    queue = task_manager.sse_manager.add_connection(user_id)
 
-    # 发送初始连接事件
-    yield f"event: connected\ndata: {json.dumps({'user_id': user_id, 'timestamp': time.time()})}\n\n"
+    try:
+        # 发送初始连接事件
+        yield f"event: connected\ndata: {json.dumps({'user_id': user_id, 'timestamp': time.time()})}\n\n"
+        logger.info(f"[SSE] 用户 {user_id} 连接已建立")
 
-    print(f"用户 {user_id} SSE 连接已建立")
+        while True:
+            try:
+                # 等待新事件（30秒超时，用于发送心跳）
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
 
-    while True:
-        try:
-            # 等待新事件（30秒超时，用于发送心跳）
-            message = await asyncio.wait_for(queue.get(), timeout=30.0)
+                # 发送事件
+                event_type = event.get("type", "message")
+                data = json.dumps(event.get("data", {}))
+                yield f"event: {event_type}\ndata: {data}\n\n"
 
-            # 发送事件
-            event_type = message.get("event", "message")
-            data = json.dumps(message.get("data", {}))
-            yield f"event: {event_type}\ndata: {data}\n\n"
+                logger.info(f"[SSE] 发送事件给用户 {user_id}: {event_type}")
 
-            print(f"发送事件给用户 {user_id}: {event_type}")
+            except asyncio.TimeoutError:
+                # 发送心跳保持连接
+                yield f"event: heartbeat\ndata: {json.dumps({'timestamp': time.time()})}\n\n"
 
-        except asyncio.TimeoutError:
-            # 发送心跳保持连接
-            yield f"event: heartbeat\ndata: {json.dumps({'timestamp': time.time()})}\n\n"
-            # print(f"发送心跳给用户 {user_id}")
+    except asyncio.CancelledError:
+        logger.info(f"[SSE] 用户 {user_id} 连接被取消")
+    except Exception as e:
+        logger.error(f"[SSE] 用户 {user_id} 连接异常: {str(e)}")
+    finally:
+        # 清理连接
+        task_manager.sse_manager.remove_connection(user_id, queue)
+        logger.info(f"[SSE] 用户 {user_id} 连接已关闭")
 
 
 @router.get("/api/v1/sse/analysis-notifications")
 async def sse_notifications(
-    user_id: int = Query(..., description="用户ID")
+    token: str = Query(..., description="JWT 认证 token")
 ):
     """
     SSE 通知端点
 
-    用户连接此端点后，将接收实时的分析状态更新。
+    用户连接此端点后，将接收实时的任务状态更新。
+
+    Args:
+        token: JWT 认证 token
 
     事件类型：
     - connected: 连接成功
     - heartbeat: 心跳（每30秒）
-    - analysis_complete: 分析完成
-    - analysis_progress: 分析进度
+    - task_started: 任务开始
+    - task_completed: 任务完成
+    - task_failed: 任务失败
     """
-    return StreamingResponse(
-        event_generator(user_id),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",  # 禁用 nginx 缓冲
-        }
-    )
+    try:
+        # 验证 token 并获取 user_id
+        payload = verify_token(token)
 
+        if not payload:
+            raise HTTPException(status_code=401, detail="无效的认证 token")
 
-# 清理断开连接的队列
-async def cleanup_user_queue(user_id: int):
-    """
-    清理用户队列（当连接断开时）
+        # JWT payload 中 user_id 存储在 "sub" 字段中
+        user_id_str = payload.get("sub")
 
-    Args:
-        user_id: 用户 ID
-    """
-    if user_id in user_queues:
-        del user_queues[user_id]
-        print(f"用户 {user_id} SSE 队列已清理")
+        if not user_id_str:
+            raise HTTPException(status_code=401, detail="Token 中缺少用户信息")
+
+        # 转换为整数
+        try:
+            user_id = int(user_id_str)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=401, detail="无效的用户ID格式")
+
+        logger.info(f"[SSE] 用户 {user_id} 正在建立 SSE 连接")
+
+        return StreamingResponse(
+            event_generator(user_id),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",  # 禁用 nginx 缓冲
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[SSE] Token 验证失败: {str(e)}")
+        raise HTTPException(status_code=401, detail="认证失败")

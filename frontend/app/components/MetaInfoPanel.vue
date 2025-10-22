@@ -47,7 +47,7 @@
         <div v-if="isAnalyzing" class="py-12 flex flex-col items-center justify-center">
           <div class="w-16 h-16 border-4 border-violet-600 border-t-transparent rounded-full animate-spin mb-4"></div>
           <p class="text-sm text-gray-600">正在分析文章元信息...</p>
-          <p class="text-xs text-gray-500 mt-1">这可能需要几秒钟</p>
+          <p class="text-xs text-gray-500 mt-1">这可能需要几分钟</p>
         </div>
 
         <!-- 错误状态 -->
