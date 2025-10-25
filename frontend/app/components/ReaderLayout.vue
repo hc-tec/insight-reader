@@ -32,15 +32,17 @@
 </template>
 
 <script setup lang="ts">
-const isExpanded = ref(false)
+// 使用全局状态，与父组件共享
+const isExpanded = useState('insight-panel-expanded', () => false)
 
 const togglePanel = () => {
   isExpanded.value = !isExpanded.value
 }
 
-// 暴露方法给父组件
+// 暴露方法和状态给父组件
 defineExpose({
-  togglePanel
+  togglePanel,
+  isPanelExpanded: () => isExpanded.value
 })
 </script>
 

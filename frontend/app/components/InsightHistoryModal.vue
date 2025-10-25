@@ -13,7 +13,7 @@
       @click="close"
     >
       <div
-        class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
+        class="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col"
         @click.stop
       >
         <!-- 头部 -->
@@ -27,8 +27,8 @@
                 </svg>
               </div>
               <div>
-                <h3 class="text-lg font-bold text-gray-900">历史洞察</h3>
-                <p class="text-xs text-gray-500">{{ formatDate(selectedItem.created_at) }}</p>
+                <h3 class="text-lg font-bold text-gray-900">对话记录</h3>
+                <p class="text-xs text-gray-500">{{ formatDate(selectedItem.created_at) }} · 共 {{ messageCount }} 条对话</p>
               </div>
             </div>
 
@@ -43,50 +43,77 @@
           </div>
         </div>
 
-        <!-- 内容 -->
-        <div class="p-6 overflow-y-auto max-h-[calc(80vh-100px)] space-y-4">
-          <!-- 选中的文本 -->
-          <div>
-            <div class="text-xs font-medium text-gray-500 mb-2">📌 选中的文本</div>
-            <div class="p-4 bg-orange-50 border-l-4 border-orange-500 rounded-lg">
-              <p class="text-gray-800 leading-relaxed">{{ selectedItem.selected_text }}</p>
-            </div>
+        <!-- 原始选中文本 -->
+        <div class="px-6 pt-4 pb-2 bg-orange-50/50">
+          <div class="text-xs font-medium text-gray-500 mb-2">📌 选中的文本</div>
+          <div class="p-3 bg-white border-l-4 border-orange-500 rounded-lg">
+            <p class="text-sm text-gray-800 leading-relaxed">{{ selectedItem.selected_text }}</p>
           </div>
+        </div>
 
-          <!-- 问题 -->
-          <div v-if="selectedItem.question">
-            <div class="text-xs font-medium text-gray-500 mb-2">❓ 你的问题</div>
-            <div class="p-4 bg-blue-50 rounded-lg">
-              <p class="text-gray-800">{{ selectedItem.question }}</p>
-            </div>
-          </div>
+        <!-- 对话历史 -->
+        <div class="flex-1 overflow-y-auto p-6 space-y-4">
+          <div
+            v-for="(message, index) in selectedItem.messages"
+            :key="index"
+            :class="[
+              'flex',
+              message.role === 'user' ? 'justify-end' : 'justify-start'
+            ]"
+          >
+            <div
+              :class="[
+                'max-w-[85%] rounded-xl p-4 shadow-sm',
+                message.role === 'user'
+                  ? 'bg-gradient-to-br from-blue-500 to-blue-600 text-white'
+                  : 'bg-gradient-to-br from-emerald-50 to-teal-50 text-gray-800'
+              ]"
+            >
+              <!-- 角色标签 -->
+              <div class="flex items-center gap-2 mb-2">
+                <span :class="[
+                  'text-xs font-medium',
+                  message.role === 'user' ? 'text-blue-100' : 'text-gray-500'
+                ]">
+                  {{ message.role === 'user' ? '👤 你' : '🤖 AI' }}
+                </span>
+                <span :class="[
+                  'text-xs',
+                  message.role === 'user' ? 'text-blue-200' : 'text-gray-400'
+                ]">
+                  {{ formatTimestamp(message.timestamp) }}
+                </span>
+              </div>
 
-          <div v-else>
-            <div class="text-xs font-medium text-gray-500 mb-2">🎯 意图</div>
-            <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full">
-              <span class="text-sm text-gray-700">{{ getIntentLabel(selectedItem.intent) }}</span>
-            </div>
-          </div>
+              <!-- 消息内容 -->
+              <div class="prose prose-sm max-w-none">
+                <p :class="[
+                  'leading-relaxed whitespace-pre-wrap',
+                  message.role === 'user' ? 'text-white' : 'text-gray-800'
+                ]">
+                  {{ message.content }}
+                </p>
+              </div>
 
-          <!-- AI 回答 -->
-          <div>
-            <div class="text-xs font-medium text-gray-500 mb-2">💡 AI 的回答</div>
-            <div class="p-4 bg-gradient-to-br from-emerald-50 to-teal-50 rounded-lg">
-              <p class="text-gray-800 leading-relaxed whitespace-pre-wrap">{{ selectedItem.insight }}</p>
-            </div>
-          </div>
-
-          <!-- 推理过程 -->
-          <div v-if="selectedItem.reasoning">
-            <div class="text-xs font-medium text-gray-500 mb-2">🧠 推理过程</div>
-            <div class="p-4 bg-purple-50 rounded-lg">
-              <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{{ selectedItem.reasoning }}</p>
+              <!-- 推理过程（仅 AI 消息） -->
+              <div v-if="message.reasoning && message.role === 'assistant'" class="mt-3 pt-3 border-t border-teal-200">
+                <div class="flex items-center gap-1 text-xs font-medium text-purple-600 mb-2">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                          d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                  <span>推理过程</span>
+                </div>
+                <p class="text-xs text-gray-600 leading-relaxed whitespace-pre-wrap">
+                  {{ message.reasoning }}
+                </p>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 底部操作按钮 -->
-        <div class="p-6 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+        <div class="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
           <button
             @click="close"
             class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
@@ -111,16 +138,19 @@
 </template>
 
 <script setup lang="ts">
-import type { InsightHistoryItem } from '~/composables/useInsightReplay'
+import type { InsightConversation } from '~/composables/useInsightReplay'
+import { computed } from 'vue'
 
 const props = defineProps<{
-  selectedItem: InsightHistoryItem | null
+  selectedItem: InsightConversation | null
 }>()
 
 const emit = defineEmits<{
   close: []
-  continueChat: [item: InsightHistoryItem]
+  continueChat: [item: InsightConversation]
 }>()
+
+const messageCount = computed(() => props.selectedItem?.messages.length || 0)
 
 const close = () => {
   emit('close')
@@ -143,14 +173,11 @@ const formatDate = (dateStr: string) => {
   })
 }
 
-const getIntentLabel = (intent: string) => {
-  const labels: Record<string, string> = {
-    'explain': '解释说明',
-    'summarize': '总结概括',
-    'question': '提问',
-    'expand': '展开详述',
-    'analyze': '深度分析'
-  }
-  return labels[intent] || intent
+const formatTimestamp = (timestamp: string) => {
+  const date = new Date(timestamp)
+  return date.toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
 }
 </script>

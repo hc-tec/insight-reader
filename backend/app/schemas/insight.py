@@ -69,6 +69,7 @@ class Message(BaseModel):
 
     role: str = Field(..., pattern="^(user|assistant)$", description="角色: user | assistant")
     content: str = Field(..., min_length=1, description="消息内容")
+    reasoning: str | None = Field(None, description="推理内容（仅assistant角色）")
     timestamp: int | None = Field(None, description="时间戳(毫秒)")
 
 

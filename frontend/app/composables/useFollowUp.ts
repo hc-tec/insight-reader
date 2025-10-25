@@ -16,6 +16,9 @@ export const useFollowUp = () => {
   const currentReasoning = useState<string>('followup-current-reasoning', () => '')
   const error = useState<string | null>('followup-error', () => null)
 
+  // 获取 SSE 实例（保持引用以便停止）
+  const { connect, abort: abortSSE } = useSSE()
+
   // 生成追问按钮（异步版本）
   const generateButtons = async (
     selectedText: string,
@@ -97,6 +100,13 @@ export const useFollowUp = () => {
     currentReasoning.value = ''
     error.value = null
 
+    // 在函数开始时获取所有需要的状态（避免在回调中调用 composables）
+    const { user } = useAuth()
+    const { content } = useArticle()
+    const { selectedStart, selectedEnd } = useSelection()
+    const { currentInsightId } = useInsightGenerator()
+    const currentArticleId = useState<number | null>('current-article-id', () => null)
+
     // 将用户问题添加到历史
     const userMessage: Message = {
       role: 'user',
@@ -105,16 +115,50 @@ export const useFollowUp = () => {
     }
     conversationHistory.value.push(userMessage)
 
-    try {
-      const { connect } = useSSE()
+    // 构建完整的对话历史用于发送给后端
+    // 注意：conversationHistory 只包含追问对话，不包含初始洞察
+    // 所以我们需要构建一个临时的完整历史（包含初始洞察）用于发送
+    const fullHistoryForBackend: Message[] = []
 
+    // 如果 conversationHistory 为空或第一条不是 assistant，说明这是第一次追问
+    // 需要在发送给后端时包含初始洞察
+    if (conversationHistory.value.length === 1 ||
+        (conversationHistory.value.length > 1 && conversationHistory.value[0]?.role !== 'assistant')) {
+      // 添加初始洞察作为第一条消息（不包含在 conversationHistory 中，只是发送给后端）
+      const { currentInsightId, currentInsight, currentReasoning } = useInsightGenerator()
+      fullHistoryForBackend.push({
+        role: 'assistant',
+        content: initialInsight,
+        reasoning: currentReasoning.value || undefined,
+        timestamp: Date.now(),
+        insight_id: currentInsightId.value || null
+      })
+    }
+
+    // 添加所有追问对话（不包含刚添加的用户问题）
+    fullHistoryForBackend.push(...conversationHistory.value.slice(0, -1))
+
+    console.log('📝 对话历史状态:', {
+      conversationHistoryLength: conversationHistory.value.length,
+      fullHistoryForBackendLength: fullHistoryForBackend.length,
+      conversationHistory: conversationHistory.value.map(m => ({ role: m.role, content: m.content.substring(0, 30) })),
+      fullHistoryForBackend: fullHistoryForBackend.map(m => ({ role: m.role, content: m.content.substring(0, 30) }))
+    })
+
+    try {
       const request: FollowUpRequest = {
         selected_text: selectedText,
         initial_insight: initialInsight,
-        conversation_history: conversationHistory.value.slice(0, -1), // 不包含刚添加的用户问题
+        conversation_history: fullHistoryForBackend, // 使用完整历史（包含初始洞察）
         follow_up_question: question,
         use_reasoning: useReasoning
       }
+
+      console.log('📤 发送追问请求:', {
+        selected_text: request.selected_text.substring(0, 30),
+        conversation_history_length: request.conversation_history.length,
+        follow_up_question: request.follow_up_question
+      })
 
       await connect('/api/v1/insights/follow-up', request, {
         onStart: () => {
@@ -126,12 +170,14 @@ export const useFollowUp = () => {
         onReasoning: (content: string) => {
           currentReasoning.value += content
         },
-        onComplete: (metadata) => {
+        onComplete: async (metadata) => {
           // 将 AI 回答添加到历史
           const assistantMessage: Message = {
             role: 'assistant',
             content: currentAnswer.value,
-            timestamp: Date.now()
+            reasoning: currentReasoning.value || undefined,
+            timestamp: Date.now(),
+            insight_id: null  // 初始时没有 ID，保存后会更新
           }
           conversationHistory.value.push(assistantMessage)
 
@@ -140,7 +186,59 @@ export const useFollowUp = () => {
             conversationLength: conversationHistory.value.length
           })
 
+          // 立即停止生成状态，避免光标继续闪烁
           isGeneratingAnswer.value = false
+
+          // 保存追问到后端数据库（如果用户已登录且有文章ID）
+          if (currentAnswer.value && user.value?.id && currentArticleId.value) {
+            try {
+              // 提取上下文（前后各100字符）
+              const articleText = content.value
+              const start = selectedStart.value || 0
+              const end = selectedEnd.value || 0
+
+              const contextBefore = start > 0
+                ? articleText.substring(Math.max(0, start - 100), start)
+                : ''
+
+              const contextAfter = end < articleText.length
+                ? articleText.substring(end, Math.min(articleText.length, end + 100))
+                : ''
+
+              // 找到对话历史中最后一条有 insight_id 的 assistant 消息作为 parent_id
+              let parentId = currentInsightId.value  // 默认使用原始洞察ID
+              const assistantMessages = conversationHistory.value.filter(m => m.role === 'assistant' && m.insight_id)
+              if (assistantMessages.length > 0) {
+                // parent_id 是最后一条已保存的 assistant 消息的 ID
+                parentId = assistantMessages[assistantMessages.length - 1].insight_id
+              }
+
+              const response = await $fetch<{ status: string; insight_history_id: number }>(`${config.public.apiBase}/api/v1/insights/history`, {
+                method: 'POST',
+                body: {
+                  article_id: currentArticleId.value,
+                  selected_text: selectedText,
+                  selected_start: selectedStart.value,
+                  selected_end: selectedEnd.value,
+                  context_before: contextBefore,
+                  context_after: contextAfter,
+                  intent: 'follow_up',
+                  question: question,
+                  insight: currentAnswer.value,
+                  reasoning: currentReasoning.value || null,
+                  parent_id: parentId  // 使用正确的父洞察 ID
+                }
+              })
+
+              console.log('💾 追问已保存到历史记录，ID:', response.insight_history_id, '父洞察ID:', parentId)
+
+              // 更新当前 assistant 消息的 insight_id
+              assistantMessage.insight_id = response.insight_history_id
+            } catch (err) {
+              console.error('❌ 保存追问历史失败:', err)
+              // 不影响用户体验，只记录错误
+            }
+          }
         },
         onError: (err) => {
           error.value = err.message || '生成回答失败'
@@ -173,6 +271,13 @@ export const useFollowUp = () => {
     }
   }
 
+  // 停止生成追问回答
+  const stopFollowUp = () => {
+    abortSSE()
+    isGeneratingAnswer.value = false
+    console.log('⏹️ 停止追问生成')
+  }
+
   return {
     // 状态（暴露为可写，以便 SSE 回调更新）
     conversationHistory,
@@ -187,6 +292,7 @@ export const useFollowUp = () => {
     generateButtons,
     askFollowUp,
     clearConversation,
-    undoLastQuestion
+    undoLastQuestion,
+    stopFollowUp  // 导出停止方法
   }
 }

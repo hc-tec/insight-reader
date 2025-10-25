@@ -43,15 +43,27 @@
       >
         <div v-if="insight || reasoning || isLoading" key="content">
           <!-- 加载中的提示（仅在非推理模式或推理内容也为空时显示） -->
-          <div v-if="isLoading && !insight && !reasoning" class="flex items-center gap-3 text-gray-700 mb-6 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
-            <div class="relative">
-              <div class="animate-spin h-5 w-5 border-2 border-emerald-600 border-t-transparent rounded-full"></div>
-              <div class="absolute inset-0 animate-ping h-5 w-5 border-2 border-emerald-400 border-t-transparent rounded-full opacity-20"></div>
+          <div v-if="isLoading && !insight && !reasoning" class="flex items-center justify-between gap-3 text-gray-700 mb-6 p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+            <div class="flex items-center gap-3">
+              <div class="relative">
+                <div class="animate-spin h-5 w-5 border-2 border-emerald-600 border-t-transparent rounded-full"></div>
+                <div class="absolute inset-0 animate-ping h-5 w-5 border-2 border-emerald-400 border-t-transparent rounded-full opacity-20"></div>
+              </div>
+              <div>
+                <p class="text-sm font-semibold">AI 正在思考...</p>
+                <p class="text-xs text-gray-600 mt-0.5">正在为你生成深度洞察</p>
+              </div>
             </div>
-            <div>
-              <p class="text-sm font-semibold">AI 正在思考...</p>
-              <p class="text-xs text-gray-600 mt-0.5">正在为你生成深度洞察</p>
-            </div>
+            <!-- 停止按钮 -->
+            <button
+              @click="handleStopGeneration"
+              class="px-3 py-1.5 text-sm font-medium bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              停止
+            </button>
           </div>
 
           <!-- 实时显示生成的内容（推理模式下即使 insight 为空也显示） -->
@@ -108,6 +120,38 @@
 
             <!-- 内容区 -->
             <div class="px-6 py-6">
+              <!-- 初始用户问题（显示在洞察顶部） -->
+              <div
+                v-if="currentRequest && !isLoading && getIntentConfig()"
+                :class="[
+                  'mb-6 p-4 border-l-4 rounded-r-lg transition-all',
+                  getIntentConfig()?.bgColor,
+                  getIntentConfig()?.borderColor
+                ]"
+              >
+                <div class="flex items-start gap-3">
+                  <!-- 图标 -->
+                  <div
+                    :class="[
+                      'flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center',
+                      getIntentConfig()?.bgColor.replace('/80', ''),
+                      getIntentConfig()?.color
+                    ]"
+                    v-html="getIntentConfig()?.icon"
+                  ></div>
+
+                  <!-- 问题内容 -->
+                  <div class="flex-1 min-w-0">
+                    <div :class="['text-xs font-semibold mb-1.5 uppercase tracking-wide', getIntentConfig()?.color]">
+                      {{ getIntentLabel() }}
+                    </div>
+                    <p :class="['text-sm leading-relaxed', getIntentConfig()?.color]">
+                      {{ getInitialUserQuestion() }}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               <!-- 推理内容（推理模式下始终显示，支持流式更新） -->
               <div v-if="useReasoning || reasoning" class="mb-6">
                 <button
@@ -145,10 +189,14 @@
               <div v-if="!isLoading && insight" class="mt-6 pt-6 border-t border-gray-100">
                 <!-- 对话历史（包括正在生成的内容） -->
                 <ConversationThread
-                  v-if="conversationHistory.length > 0 || (isGeneratingAnswer && currentAnswer)"
+                  v-if="conversationHistory.length > 0 || (isGeneratingAnswer && currentAnswer) || currentRequest"
                   :messages="conversationHistory"
+                  :initial-user-question="getInitialUserQuestion()"
                   :is-generating="isGeneratingAnswer"
                   :current-answer="currentAnswer"
+                  :current-reasoning="currentReasoning"
+                  :use-reasoning="useReasoningState"
+                  @stop="handleStopGeneration"
                   class="mb-6"
                 />
 
@@ -205,10 +253,13 @@ const {
   isGeneratingButtons,
   isGeneratingAnswer,
   currentAnswer,
+  currentReasoning,
   generateButtons,
   askFollowUp,
-  clearConversation
+  clearConversation,
+  stopFollowUp
 } = useFollowUp()
+const { stopGeneration } = useInsightGenerator()
 const { onButtonGenerationComplete } = useAnalysisNotifications()
 
 // 收藏相关
@@ -224,6 +275,9 @@ const isStashed = computed(() => {
 
 // 推理内容显示
 const showReasoning = ref(true)
+
+// 追问是否使用推理模式
+const useReasoningState = useState('use-reasoning', () => false)
 
 // Markdown 渲染
 const renderedInsight = computed(() => {
@@ -265,15 +319,6 @@ watch(() => [props.insight, props.isLoading] as const, ([insight, loading], [pre
       insight,
       props.currentRequest.intent
     )
-  }
-})
-
-// 监听 insight 变化，重置状态
-watch(() => props.insight, (newInsight, oldInsight) => {
-  if (newInsight !== oldInsight && newInsight) {
-    // 新的洞察生成，重置状态
-    saveSuccess.value = false
-    clearConversation() // 清空对话历史
   }
 })
 
@@ -339,11 +384,59 @@ const handleStash = async () => {
   }
 }
 
+// 处理停止生成
+const handleStopGeneration = () => {
+  console.log('🛑 用户点击停止按钮')
+
+  // 停止主洞察生成
+  if (props.isLoading) {
+    stopGeneration()
+  }
+
+  // 停止追问生成
+  if (isGeneratingAnswer.value) {
+    stopFollowUp()
+  }
+}
+
 // 处理追问选择
 const handleFollowUpSelect = async (question: string) => {
-  if (!props.currentRequest || !props.insight) return
+  console.log('🔍 handleFollowUpSelect 调用', {
+    hasCurrentRequest: !!props.currentRequest,
+    hasInsight: !!props.insight,
+    question,
+    conversationHistoryLength: conversationHistory.value.length
+  })
+
+  if (!props.currentRequest || !props.insight) {
+    console.warn('❌ 缺少必要参数:', {
+      currentRequest: props.currentRequest,
+      insight: props.insight ? `${props.insight.substring(0, 50)}...` : null
+    })
+    return
+  }
+
+  // 🔥 关键修复：确保对话历史中包含初始洞察，并且 insight_id 正确
+  const { currentInsightId } = useInsightGenerator()
+
+  console.log('🔍 追问前检查:', {
+    historyLength: conversationHistory.value.length,
+    currentInsightId: currentInsightId.value,
+    currentInsight: props.insight.substring(0, 50)
+  })
+
+  // 注意：conversationHistory 只包含追问对话，不包含初始洞察
+  // 这样可以避免在界面上重复显示初始洞察
+  // 在发送追问请求时，askFollowUp 函数会自动处理初始洞察的包含
 
   const useReasoning = useState('use-reasoning', () => false)
+
+  console.log('✅ 开始追问:', {
+    selectedText: props.currentRequest.selected_text.substring(0, 30),
+    question,
+    useReasoning: useReasoning.value,
+    conversationHistoryLength: conversationHistory.value.length
+  })
 
   await askFollowUp(
     props.currentRequest.selected_text,
@@ -360,6 +453,97 @@ const handleFollowUpSelect = async (question: string) => {
       props.currentRequest.intent
     )
   }
+}
+
+// 获取初始用户问题（根据 intent 类型智能显示）
+const getInitialUserQuestion = () => {
+  if (!props.currentRequest) return undefined
+
+  // 如果有自定义问题，直接返回自定义问题
+  if (props.currentRequest.custom_question && props.currentRequest.custom_question.trim()) {
+    return props.currentRequest.custom_question
+  }
+
+  // 根据 intent 类型返回对应的标准问题
+  const intentQuestions: Record<string, string> = {
+    'explain': '这是什么意思？',
+    'analyze': '作者为什么这么说？',
+    'counter': '有不同的看法吗？',
+    'custom': '自定义问题'  // 添加 custom 的默认文本（兜底）
+  }
+
+  const question = intentQuestions[props.currentRequest.intent]
+
+  // 如果是已知的 intent，返回标准问题
+  if (question) {
+    return question
+  }
+
+  // 兜底：如果 intent 未知，显示选中文本
+  return props.currentRequest.selected_text
+}
+
+// 获取 intent 的配置（颜色、图标）
+const getIntentConfig = () => {
+  if (!props.currentRequest) return null
+
+  const configs: Record<string, { color: string; bgColor: string; borderColor: string; icon: string }> = {
+    'explain': {
+      color: 'text-emerald-800',
+      bgColor: 'bg-emerald-50/80',
+      borderColor: 'border-emerald-400',
+      icon: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>`
+    },
+    'analyze': {
+      color: 'text-teal-800',
+      bgColor: 'bg-teal-50/80',
+      borderColor: 'border-teal-400',
+      icon: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>`
+    },
+    'counter': {
+      color: 'text-slate-800',
+      bgColor: 'bg-slate-50/80',
+      borderColor: 'border-slate-400',
+      icon: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+      </svg>`
+    },
+    'custom': {
+      color: 'text-purple-800',
+      bgColor: 'bg-purple-50/80',
+      borderColor: 'border-purple-400',
+      icon: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+      </svg>`
+    }
+  }
+
+  return configs[props.currentRequest.intent] || {
+    color: 'text-blue-800',
+    bgColor: 'bg-blue-50/80',
+    borderColor: 'border-blue-400',
+    icon: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>`
+  }
+}
+
+// 获取 intent 的标签文本
+const getIntentLabel = () => {
+  if (!props.currentRequest) return ''
+
+  const labels: Record<string, string> = {
+    'explain': '解释说明',
+    'analyze': '深度分析',
+    'counter': '反向思考',
+    'custom': '自定义问题'
+  }
+
+  return labels[props.currentRequest.intent] || '提问'
 }
 </script>
 

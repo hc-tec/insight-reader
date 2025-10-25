@@ -38,6 +38,42 @@
       </div>
     </Transition>
 
+    <!-- 批注模式开关 -->
+    <div
+      v-if="isLensActive('argument_structure') || isLensActive('author_stance')"
+      class="mb-4 p-4 bg-gradient-to-r from-emerald-50/50 to-teal-50/50 rounded-xl border border-emerald-200/50"
+    >
+      <div class="flex items-center justify-between">
+        <div class="flex-1">
+          <div class="flex items-center gap-2 mb-1">
+            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+            </svg>
+            <span class="text-sm font-semibold text-emerald-900">批注模式</span>
+          </div>
+          <p class="text-xs text-emerald-700/80">在高亮文本旁显示详细分析</p>
+        </div>
+
+        <!-- Toggle Switch -->
+        <button
+          @click="toggleAnnotationMode"
+          :class="[
+            'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2',
+            isAnnotationModeActive ? 'bg-emerald-500' : 'bg-gray-300'
+          ]"
+          role="switch"
+          :aria-checked="isAnnotationModeActive"
+        >
+          <span
+            :class="[
+              'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+              isAnnotationModeActive ? 'translate-x-6' : 'translate-x-1'
+            ]"
+          />
+        </button>
+      </div>
+    </div>
+
     <!-- 透镜选择器 -->
     <div class="space-y-3">
       <!-- 论证结构透镜 -->
@@ -241,6 +277,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useThinkingLens } from '~/composables/useThinkingLens'
+import { useLensAnnotation } from '~/composables/useLensAnnotation'
 import type { LensType } from '~/composables/useThinkingLens'
 
 const props = defineProps<{
@@ -261,6 +298,12 @@ const {
   error,
   toggleLens: toggleLensComposable
 } = useThinkingLens()
+
+// 使用透镜注解 composable
+const {
+  isAnnotationModeActive,
+  toggleAnnotationMode
+} = useLensAnnotation()
 
 const showHelp = ref(false)
 const pendingLens = ref<LensType | null>(null)

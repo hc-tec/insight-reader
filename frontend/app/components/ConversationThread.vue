@@ -29,6 +29,23 @@
       leave-to-class="opacity-0 max-h-0"
     >
       <div v-if="!collapsed" class="space-y-4 overflow-hidden">
+        <!-- 初始用户问题（仅在有追问对话时显示，避免与顶部的问题卡片重复） -->
+        <div
+          v-if="initialUserQuestion && messages.length > 0"
+          class="message-item user"
+        >
+          <div class="flex items-center gap-2 mb-1.5">
+            <span class="text-xs font-medium text-gray-600">你的初始问题</span>
+            <span class="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">起点</span>
+          </div>
+          <div class="message-content pl-4 border-l-2 border-gray-300 bg-gray-50/50">
+            <p class="text-sm text-gray-600 py-2 italic">
+              {{ initialUserQuestion }}
+            </p>
+          </div>
+        </div>
+
+        <!-- 追问对话 -->
         <div
           v-for="(msg, idx) in messages"
           :key="idx"
@@ -54,6 +71,28 @@
                 : 'border-emerald-300 bg-emerald-50/30'
             ]"
           >
+            <!-- AI 回答的思维链 -->
+            <div v-if="msg.role === 'assistant' && msg.reasoning" class="mb-3">
+              <button
+                @click="toggleReasoning(idx)"
+                class="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-emerald-700 transition-colors mb-2"
+              >
+                <svg
+                  :class="['w-3 h-3 transition-transform', isReasoningExpanded(idx) && 'rotate-90']"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+                <span>思维链</span>
+              </button>
+
+              <div v-if="isReasoningExpanded(idx)" class="p-3 bg-gray-50 rounded-lg border border-gray-200 mb-3">
+                <div class="prose prose-xs max-w-none text-gray-700" v-html="renderMarkdown(msg.reasoning)"></div>
+              </div>
+            </div>
+
             <div
               v-if="msg.role === 'assistant'"
               class="prose prose-sm max-w-none"
@@ -66,18 +105,62 @@
         </div>
 
         <!-- 当前正在生成的回答 -->
-        <div v-if="isGenerating && currentAnswer" class="message-item assistant">
-          <div class="flex items-center gap-2 mb-1.5">
-            <span class="text-xs font-medium">🤖 AI 的回答</span>
-            <div class="flex items-center gap-1 text-xs text-emerald-600">
-              <div class="animate-spin h-3 w-3 border-2 border-emerald-600 border-t-transparent rounded-full"></div>
-              <span>生成中...</span>
+        <div v-if="isGenerating && (currentAnswer || currentReasoning)" class="message-item assistant">
+          <div class="flex items-center justify-between gap-2 mb-1.5">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-medium">🤖 AI 的回答</span>
+              <div class="flex items-center gap-1 text-xs text-emerald-600">
+                <div class="animate-spin h-3 w-3 border-2 border-emerald-600 border-t-transparent rounded-full"></div>
+                <span>生成中...</span>
+              </div>
             </div>
+            <!-- 停止按钮 -->
+            <button
+              @click="$emit('stop')"
+              class="px-2 py-1 text-xs font-medium bg-red-500 hover:bg-red-600 text-white rounded transition-colors flex items-center gap-1"
+            >
+              <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              <span>停止</span>
+            </button>
           </div>
 
           <div class="message-content pl-4 border-l-2 border-emerald-300 bg-emerald-50/30">
-            <div class="prose prose-sm max-w-none" v-html="renderMarkdown(currentAnswer)"></div>
-            <span class="inline-block w-0.5 h-4 bg-emerald-600 animate-blink ml-1 align-middle"></span>
+            <!-- 当前生成的思维链 -->
+            <div v-if="useReasoning || currentReasoning" class="mb-3">
+              <button
+                @click="currentReasoningExpanded = !currentReasoningExpanded"
+                class="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-emerald-700 transition-colors mb-2"
+              >
+                <svg
+                  :class="['w-3 h-3 transition-transform', currentReasoningExpanded && 'rotate-90']"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+                <span>思维链</span>
+                <span class="px-1.5 py-0.5 rounded text-xs bg-emerald-100 text-emerald-700">推理模式</span>
+              </button>
+
+              <div v-if="currentReasoningExpanded" class="p-3 bg-gray-50 rounded-lg border border-gray-200 mb-3">
+                <!-- 思维链内容为空且正在加载时显示提示 -->
+                <div v-if="!currentReasoning && isGenerating" class="flex items-center gap-2 text-gray-500 text-xs">
+                  <div class="animate-spin h-3 w-3 border-2 border-emerald-600 border-t-transparent rounded-full"></div>
+                  <span>AI 正在推理中...</span>
+                </div>
+                <!-- 思维链内容 - 使用 computed 确保响应式 -->
+                <div v-else-if="currentReasoning" class="prose prose-xs max-w-none text-gray-700" v-html="renderedCurrentReasoning"></div>
+                <!-- 推理过程中显示光标 -->
+                <span v-if="isGenerating && currentReasoning" class="inline-block w-0.5 h-4 bg-emerald-600 animate-blink ml-1 align-middle"></span>
+              </div>
+            </div>
+
+            <!-- 回答内容（只在有内容时显示） -->
+            <div v-if="currentAnswer" class="prose prose-sm max-w-none" v-html="renderedCurrentAnswer"></div>
+            <span v-if="isGenerating && currentAnswer" class="inline-block w-0.5 h-4 bg-emerald-600 animate-blink ml-1 align-middle"></span>
           </div>
         </div>
       </div>
@@ -91,11 +174,26 @@ import type { Message } from '~/types/followup'
 
 const props = defineProps<{
   messages: Message[]
+  initialUserQuestion?: string  // 初始用户问题（选中文本或自定义问题）
   isGenerating?: boolean
   currentAnswer?: string
+  currentReasoning?: string
+  useReasoning?: boolean
 }>()
 
 const collapsed = ref(false)
+
+// 控制每条消息的思维链展开状态
+const reasoningExpandedMap = ref<Record<number, boolean>>({})
+const currentReasoningExpanded = ref(true)
+
+const isReasoningExpanded = (index: number) => {
+  return reasoningExpandedMap.value[index] ?? false
+}
+
+const toggleReasoning = (index: number) => {
+  reasoningExpandedMap.value[index] = !reasoningExpandedMap.value[index]
+}
 
 // 格式化时间
 const formatTime = (timestamp: number) => {
@@ -129,6 +227,18 @@ const renderMarkdown = (content: string) => {
   if (!content) return ''
   return marked(content, { breaks: true })
 }
+
+// 为当前正在生成的推理内容创建 computed
+const renderedCurrentReasoning = computed(() => {
+  if (!props.currentReasoning) return ''
+  return marked(props.currentReasoning, { breaks: true })
+})
+
+// 为当前正在生成的回答创建 computed
+const renderedCurrentAnswer = computed(() => {
+  if (!props.currentAnswer) return ''
+  return marked(props.currentAnswer, { breaks: true })
+})
 
 // 监听消息变化，新消息到达时自动展开
 watch(() => props.messages.length, (newLength, oldLength) => {

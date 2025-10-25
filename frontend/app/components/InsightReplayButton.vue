@@ -35,7 +35,7 @@ const props = defineProps<{
   insightCount: number
 }>()
 
-const { isReplayMode, toggleReplayMode, renderHistoryHighlights, removeHistoryHighlights, insightHistory } = useInsightReplay()
+const { isReplayMode, toggleReplayMode, renderHistoryHighlights, removeHistoryHighlights, insightConversations } = useInsightReplay()
 
 const handleToggle = () => {
   toggleReplayMode()
@@ -45,7 +45,7 @@ const handleToggle = () => {
   if (!containerEl) return
 
   if (isReplayMode.value) {
-    renderHistoryHighlights(containerEl, insightHistory.value)
+    renderHistoryHighlights(containerEl, insightConversations.value)
   } else {
     removeHistoryHighlights(containerEl)
   }

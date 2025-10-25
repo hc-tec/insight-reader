@@ -150,7 +150,12 @@ class AIService:
         if conversation_history:
             for msg in conversation_history[-5:]:  # 只取最近5轮
                 role_label = "用户" if msg.role == "user" else "AI"
-                history_str += f"{role_label}: {msg.content}\n"
+                # 如果是 assistant 的回答且有 reasoning，包含思考过程
+                if msg.role == "assistant" and msg.reasoning:
+                    history_str += f"{role_label} [思考]: {msg.reasoning[:200]}...\n"  # 限制长度
+                    history_str += f"{role_label} [回答]: {msg.content}\n"
+                else:
+                    history_str += f"{role_label}: {msg.content}\n"
 
         # 构建 prompt
         system_prompt = """你是一个智能学习助手。根据用户当前的学习内容和对话历史，生成3-4个最有价值的追问建议。
@@ -276,16 +281,34 @@ class AIService:
             },
             {
                 "role": "user",
-                "content": f"原始文本: {selected_text}\n\n初始洞察: {initial_insight}"
+                "content": f"原始文本: {selected_text}"
             }
         ]
 
-        # 添加对话历史
-        for msg in conversation_history:
+        # 添加对话历史（包含初始洞察和后续对话）
+        # 如果历史为空，则添加初始洞察作为第一条assistant消息
+        if not conversation_history:
+            # 向后兼容：如果没有历史记录，使用 initial_insight
             messages.append({
-                "role": msg.role,
-                "content": msg.content
+                "role": "assistant",
+                "content": initial_insight
             })
+        else:
+            # 有历史记录，逐条添加
+            for msg in conversation_history:
+                # 如果是 assistant 的回答且有 reasoning，需要将 reasoning 包含在内容中
+                if msg.role == "assistant" and msg.reasoning:
+                    # 将推理过程和最终回答合并，让 AI 了解完整的思考过程
+                    full_content = f"[思考过程]\n{msg.reasoning}\n\n[回答]\n{msg.content}"
+                    messages.append({
+                        "role": msg.role,
+                        "content": full_content
+                    })
+                else:
+                    messages.append({
+                        "role": msg.role,
+                        "content": msg.content
+                    })
 
         # 添加当前追问
         messages.append({

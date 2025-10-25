@@ -39,6 +39,7 @@ class SaveInsightRequest(BaseModel):
     question: Optional[str] = None
     insight: str
     reasoning: Optional[str] = None
+    parent_id: Optional[int] = None  # 追问时指向原始洞察的 ID
 
 
 # ==================== 文章相关 API ====================
@@ -152,6 +153,7 @@ async def save_insight_history(
         insight_history = InsightHistory(
             article_id=request.article_id,
             user_id=current_user.id,
+            parent_id=request.parent_id,  # 支持追问链
             selected_text=request.selected_text,
             selected_start=request.selected_start,
             selected_end=request.selected_end,
@@ -192,21 +194,24 @@ async def get_insight_history(
     db: Session = Depends(get_db)
 ):
     """
-    获取文章的洞察历史
+    获取文章的洞察历史（按对话链分组）
 
     **权限控制：**
     - 示例文章（is_demo=True）：任何人都可以访问，返回所有洞察
     - 普通文章：需要登录且是文章所有者，返回该用户的洞察
 
+    **返回格式：**
+    返回按对话链分组的结构，每个对话包含完整的 messages 数组（user/assistant 交替）
+
     Args:
         article_id: 文章ID
-        limit: 每页数量
+        limit: 每页数量（限制对话链数量）
         offset: 偏移量
         current_user: 当前用户（可选）
         db: 数据库会话
 
     Returns:
-        洞察历史列表
+        对话链列表，每个对话包含 messages 数组
     """
     try:
         # 验证文章是否存在
@@ -221,7 +226,7 @@ async def get_insight_history(
             if article.user_id != current_user.id:
                 raise HTTPException(status_code=403, detail="无权访问此文章")
 
-        # 构建查询
+        # 构建查询：获取所有洞察记录
         query = db.query(InsightHistory).filter(
             InsightHistory.article_id == article_id
         )
@@ -230,33 +235,96 @@ async def get_insight_history(
         if not article.is_demo and current_user:
             query = query.filter(InsightHistory.user_id == current_user.id)
 
-        # 按时间倒序
-        query = query.order_by(desc(InsightHistory.created_at))
+        # 按时间正序（先发生的在前）
+        all_insights = query.order_by(InsightHistory.created_at).all()
+
+        # 构建对话链：将洞察组织成树形结构
+        # 1. 找到所有根洞察（parent_id == null）
+        root_insights = [i for i in all_insights if i.parent_id is None]
+
+        # 2. 构建 ID -> 洞察的映射
+        insight_map = {i.id: i for i in all_insights}
+
+        # 3. 为每个根洞察构建完整的对话链
+        conversations = []
+        for root in root_insights:
+            messages = []
+
+            # 添加初始问题（用户消息）
+            messages.append({
+                "role": "user",
+                "content": root.question or root.selected_text,  # 如果有自定义问题用问题，否则用选中文本
+                "timestamp": root.created_at.isoformat(),
+                "insight_id": None  # 用户消息没有 insight_id
+            })
+
+            # 添加初始洞察（助手消息）
+            assistant_message = {
+                "role": "assistant",
+                "content": root.insight,
+                "timestamp": root.created_at.isoformat(),
+                "insight_id": root.id  # 重要：添加洞察记录的 ID
+            }
+            if root.reasoning:
+                assistant_message["reasoning"] = root.reasoning
+            messages.append(assistant_message)
+
+            # 递归添加所有追问（通过 parent_id 链接）
+            def add_follow_ups(parent_id: int):
+                # 找到所有直接子追问
+                children = [i for i in all_insights if i.parent_id == parent_id]
+                for child in children:
+                    # 添加用户追问
+                    messages.append({
+                        "role": "user",
+                        "content": child.question or child.selected_text,
+                        "timestamp": child.created_at.isoformat(),
+                        "insight_id": None  # 用户消息没有 insight_id
+                    })
+
+                    # 添加 AI 回答
+                    child_message = {
+                        "role": "assistant",
+                        "content": child.insight,
+                        "timestamp": child.created_at.isoformat(),
+                        "insight_id": child.id  # 重要：添加洞察记录的 ID
+                    }
+                    if child.reasoning:
+                        child_message["reasoning"] = child.reasoning
+                    messages.append(child_message)
+
+                    # 递归处理子追问的追问
+                    add_follow_ups(child.id)
+
+            add_follow_ups(root.id)
+
+            # 构建对话对象
+            conversation = {
+                "root_insight_id": root.id,
+                "selected_text": root.selected_text,
+                "selected_start": root.selected_start,
+                "selected_end": root.selected_end,
+                "context_before": root.context_before,
+                "context_after": root.context_after,
+                "intent": root.intent,
+                "question": root.question,  # ✅ 添加 question 字段（自定义问题）
+                "created_at": root.created_at.isoformat(),
+                "messages": messages
+            }
+            conversations.append(conversation)
+
+        # 按创建时间倒序排列（最新的对话在前）
+        conversations.sort(key=lambda x: x["created_at"], reverse=True)
 
         # 分页
-        total = query.count()
-        insights = query.offset(offset).limit(limit).all()
+        total = len(conversations)
+        paginated_conversations = conversations[offset:offset + limit]
 
         return {
             "total": total,
             "limit": limit,
             "offset": offset,
-            "insights": [
-                {
-                    "id": insight.id,
-                    "selected_text": insight.selected_text,
-                    "selected_start": insight.selected_start,
-                    "selected_end": insight.selected_end,
-                    "context_before": insight.context_before,
-                    "context_after": insight.context_after,
-                    "intent": insight.intent,
-                    "question": insight.question,
-                    "insight": insight.insight,
-                    "reasoning": insight.reasoning,
-                    "created_at": insight.created_at.isoformat()
-                }
-                for insight in insights
-            ]
+            "conversations": paginated_conversations
         }
 
     except Exception as e:

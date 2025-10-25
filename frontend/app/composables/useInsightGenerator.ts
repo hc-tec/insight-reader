@@ -7,6 +7,7 @@ export const useInsightGenerator = () => {
   const isGenerating = useState<boolean>('is-generating', () => false)
   const currentInsight = useState<string>('current-insight', () => '')
   const currentReasoning = useState<string>('current-reasoning', () => '')
+  const currentInsightId = useState<number | null>('current-insight-id', () => null)  // 当前洞察的 ID
   const error = useState<string | null>('insight-error', () => null)
   const { addHistoryItem } = useHistory()
   const { title, content } = useArticle()
@@ -15,6 +16,9 @@ export const useInsightGenerator = () => {
   const currentArticleId = useState<number | null>('current-article-id', () => null)
   const config = useRuntimeConfig()
 
+  // 获取 SSE 实例（保持引用以便停止）
+  const { connect, abort: abortSSE } = useSSE()
+
   const generate = async (request: InsightRequest) => {
     isGenerating.value = true
     currentInsight.value = ''
@@ -22,8 +26,6 @@ export const useInsightGenerator = () => {
     error.value = null
 
     try {
-      const { connect } = useSSE()
-
       await connect('/api/v1/insights/generate', request, {
         onStart: () => {
           currentInsight.value = ''
@@ -46,6 +48,11 @@ export const useInsightGenerator = () => {
             reasoningLength: currentReasoning.value.length
           })
 
+          // 注意：初始洞察不添加到 conversationHistory 中
+          // 因为它会显示在 currentInsight 区域（顶部）
+          // conversationHistory 只用于显示追问对话
+          // 当需要追问时，通过 currentInsightId 来追踪初始洞察的 ID
+
           // 保存到本地历史记录
           if (currentInsight.value) {
             addHistoryItem({
@@ -59,6 +66,14 @@ export const useInsightGenerator = () => {
           }
 
           // 保存到后端洞察历史（如果用户已登录且有文章ID）
+          console.log('🔍 检查是否保存到后端:', {
+            hasInsight: !!currentInsight.value,
+            hasUser: !!user.value?.id,
+            hasArticleId: !!currentArticleId.value,
+            userId: user.value?.id,
+            articleId: currentArticleId.value
+          })
+
           if (currentInsight.value && user.value?.id && currentArticleId.value) {
             try {
               // 提取上下文（前后各100字符）
@@ -74,7 +89,7 @@ export const useInsightGenerator = () => {
                 ? articleText.substring(end, Math.min(articleText.length, end + 100))
                 : ''
 
-              await $fetch(`${config.public.apiBase}/api/v1/insights/history`, {
+              const response = await $fetch<{ status: string; insight_history_id: number }>(`${config.public.apiBase}/api/v1/insights/history`, {
                 method: 'POST',
                 body: {
                   article_id: currentArticleId.value,
@@ -86,11 +101,14 @@ export const useInsightGenerator = () => {
                   intent: request.intent,
                   question: request.custom_question || null,
                   insight: currentInsight.value,
-                  reasoning: currentReasoning.value || null
+                  reasoning: currentReasoning.value || null,
+                  parent_id: null  // 初始洞察没有 parent
                 }
               })
 
-              console.log('💾 洞察已保存到历史记录')
+              // 保存洞察 ID，用于后续追问
+              currentInsightId.value = response.insight_history_id
+              console.log('💾 洞察已保存到历史记录，ID:', response.insight_history_id)
             } catch (err) {
               console.error('❌ 保存洞察历史失败:', err)
               // 不影响用户体验，只记录错误
@@ -116,12 +134,21 @@ export const useInsightGenerator = () => {
     isGenerating.value = false
   }
 
+  // 停止生成
+  const stopGeneration = () => {
+    abortSSE()
+    isGenerating.value = false
+    console.log('⏹️ 停止洞察生成')
+  }
+
   return {
     isGenerating,
     currentInsight,
     currentReasoning,
+    currentInsightId,
     error,
     generate,
-    clear
+    clear,
+    stopGeneration  // 导出停止方法
   }
 }

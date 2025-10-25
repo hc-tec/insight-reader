@@ -253,6 +253,9 @@ class InsightHistory(Base):
     article_id = Column(Integer, ForeignKey("articles.id"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
+    # 追问链支持：parent_id 指向原始洞察
+    parent_id = Column(Integer, ForeignKey("insight_history.id"), nullable=True, index=True)
+
     # 选中的文本
     selected_text = Column(Text, nullable=False)  # 用户选中的原文
     selected_start = Column(Integer, nullable=True)  # 在文章中的起始位置（字符索引）
@@ -263,7 +266,7 @@ class InsightHistory(Base):
     context_after = Column(String(200), nullable=True)  # 后50字
 
     # 问题和答案
-    intent = Column(String(50), nullable=False)  # 'explain' | 'summarize' | 'question' | ...
+    intent = Column(String(50), nullable=False)  # 'explain' | 'summarize' | 'question' | 'follow_up' | ...
     question = Column(Text, nullable=True)  # 如果是自定义问题
     insight = Column(Text, nullable=False)  # AI 的回答
     reasoning = Column(Text, nullable=True)  # 推理过程（如果有）
@@ -274,6 +277,9 @@ class InsightHistory(Base):
     # 关系
     article = relationship("Article", back_populates="insight_history")
     user = relationship("User", backref="insight_history_items")
+
+    # 自引用关系：追问链
+    parent = relationship("InsightHistory", remote_side=[id], backref="follow_ups")
 
 
 class MetaAnalysis(Base):

@@ -43,11 +43,11 @@
       <input
         v-model="customQuestion"
         @keydown.enter="handleCustomQuestion"
-        :disabled="disabled || loading"
+        :disabled="disabled"
         placeholder="➕ 或者自定义提问..."
         class="flex-1 min-w-0 px-3 py-2 text-sm rounded-lg border border-gray-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
         :class="[
-          disabled || loading
+          disabled
             ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
             : 'bg-white'
         ]"
@@ -55,10 +55,10 @@
       <button
         v-if="customQuestion.trim()"
         @click="handleCustomQuestion"
-        :disabled="disabled || loading"
+        :disabled="disabled"
         class="px-4 py-2 text-sm font-medium rounded-lg transition-all"
         :class="[
-          disabled || loading
+          disabled
             ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
             : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95'
         ]"
@@ -97,8 +97,18 @@ const handleButtonClick = (button: FollowUpButton) => {
 
 const handleCustomQuestion = () => {
   const question = customQuestion.value.trim()
-  if (!question || props.disabled || props.loading) return
+  console.log('🔍 handleCustomQuestion 调用', {
+    question,
+    disabled: props.disabled,
+    hasQuestion: !!question
+  })
 
+  if (!question || props.disabled) {
+    console.warn('❌ 自定义追问被阻止:', { question, disabled: props.disabled })
+    return
+  }
+
+  console.log('✅ 发射 select 事件:', question)
   emit('select', question)
   customQuestion.value = '' // 清空输入框
 }

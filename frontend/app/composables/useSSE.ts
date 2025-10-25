@@ -14,6 +14,9 @@ interface SSECallbacks {
 export const useSSE = () => {
   const config = useRuntimeConfig()
 
+  // 存储当前的 AbortController
+  let currentAbortController: AbortController | null = null
+
   const connect = async (
     url: string,
     data: InsightRequest,
@@ -21,13 +24,18 @@ export const useSSE = () => {
   ) => {
     const fullUrl = `${config.public.apiBase}${url}`
 
+    // 创建新的 AbortController
+    currentAbortController = new AbortController()
+    const signal = currentAbortController.signal
+
     try {
       const response = await fetch(fullUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        signal  // 传递 signal
       })
 
       if (!response.ok) {
@@ -84,14 +92,31 @@ export const useSSE = () => {
         }
       } finally {
         reader.releaseLock()
+        currentAbortController = null
       }
     } catch (error) {
+      // 如果是用户主动取消，不当作错误
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('⏹️ 用户停止了生成')
+        return
+      }
+
       callbacks.onError?.({ message: error instanceof Error ? error.message : '未知错误' })
       throw error
     }
   }
 
+  // 停止当前连接
+  const abort = () => {
+    if (currentAbortController) {
+      console.log('⏹️ 停止 SSE 连接')
+      currentAbortController.abort()
+      currentAbortController = null
+    }
+  }
+
   return {
-    connect
+    connect,
+    abort
   }
 }

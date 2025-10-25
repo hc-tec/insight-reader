@@ -125,7 +125,7 @@
     <FloatingActions
       v-if="isReading"
       :is-insight-panel-expanded="isInsightPanelExpanded"
-      :insight-count="insightHistory.length"
+      :insight-count="insightConversations.length"
       :is-replay-mode="isReplayMode"
       :history-count="history.length"
       :is-meta-view-active="isMetaViewActive"
@@ -136,10 +136,17 @@
       @toggle-meta-view="handleToggleMetaView"
     />
 
+    <!-- 透镜注解覆盖层 -->
+    <LensAnnotationOverlay
+      v-if="isReading"
+      :is-active="isLensAnnotationActive"
+      :annotations="lensAnnotations"
+    />
+
     <!-- 洞察详情弹窗 -->
     <InsightHistoryModal
-      :selected-item="selectedHistoryItem"
-      @close="selectHistoryItem(null)"
+      :selected-item="selectedConversation"
+      @close="selectConversation(null)"
       @continue-chat="handleContinueChat"
     />
 
@@ -160,7 +167,7 @@
 import type { Intent, InsightRequest } from '~/types/insight'
 import type { HistoryItem } from '~/types/history'
 import type { StashItem } from '~/types/stash'
-import type { InsightHistoryItem } from '~/composables/useInsightReplay'
+import type { InsightConversation } from '~/composables/useInsightReplay'
 import type { AnalysisPreferences } from '~/composables/useAnalysisPreferences'
 
 // 使用 Composables
@@ -193,11 +200,11 @@ const { stashItems } = useStash()
 
 // 洞察回放相关
 const {
-  insightHistory,
-  selectedHistoryItem,
+  insightConversations,
+  selectedConversation,
   loadInsightHistory,
   clearReplayState,
-  selectHistoryItem,
+  selectConversation,
   isReplayMode,
   toggleReplayMode,
   renderHistoryHighlights,
@@ -223,9 +230,17 @@ const {
   renderHighlightsByType
 } = useThinkingLens()
 
+// 透镜注解相关
+const {
+  isAnnotationModeActive: isLensAnnotationActive,
+  annotations: lensAnnotations,
+  toggleAnnotationMode,
+  refreshAnnotationPositions
+} = useLensAnnotation()
+
 // UI状态
 const isHistoryPanelOpen = ref(false)
-const isInsightPanelExpanded = ref(false)
+const isInsightPanelExpanded = useState('insight-panel-expanded', () => false)
 const readerLayoutRef = ref(null)
 
 // 分析偏好设置
@@ -260,8 +275,8 @@ const displayReasoning = computed(() => currentReasoning.value)
 const displayIsGenerating = computed(() => isGenerating.value)
 const displayError = computed(() => error.value)
 
-// 保存当前请求信息（用于收藏和暂存）
-const currentRequest = ref<InsightRequest | undefined>(undefined)
+// 保存当前请求信息（用于收藏和暂存）- 使用全局状态
+const currentRequest = useState<InsightRequest | undefined>('current-request-global', () => undefined)
 
 // 推理模式状态（全局共享）
 const useReasoning = useState('use-reasoning', () => false)
@@ -275,8 +290,18 @@ const stashCount = computed(() => stashItems.value.length)
 // 控制触发按钮显示
 const showTrigger = ref(false)
 
+// 标记是否是从历史回放恢复的选中（用于避免弹出意图按钮）- 使用全局状态
+const isRestoringFromHistory = useState('is-restoring-from-history', () => false)
+
 // 监听选中文本变化，控制触发按钮显示
 watch(() => selectedText.value, (newValue) => {
+  // 如果是从历史回放恢复的选中，不显示意图按钮
+  if (isRestoringFromHistory.value) {
+    showTrigger.value = false
+    isRestoringFromHistory.value = false  // 重置标志
+    return
+  }
+
   if (newValue && newValue.length > 0 && !showIntentButtons.value) {
     showTrigger.value = true
   } else {
@@ -493,6 +518,11 @@ const handleIntentSelect = async (intent: Intent, customQuestion?: string, inclu
   // 保存请求信息
   currentRequest.value = request
 
+  // 清空对话历史（因为这是新的洞察）
+  const { clearConversation } = useFollowUp()
+  clearConversation()
+  console.log('🆕 生成新洞察，清空对话历史')
+
   await generate(request)
   clearSelection()
   showTrigger.value = false
@@ -521,37 +551,77 @@ const handleHistorySelect = (item: HistoryItem) => {
 }
 
 // 处理继续聊天（从洞察历史）
-const handleContinueChat = (item: InsightHistoryItem) => {
+const handleContinueChat = (conversation: InsightConversation) => {
+  // 标记为从历史恢复，避免弹出意图按钮
+  isRestoringFromHistory.value = true
+
   // 如果侧边栏关闭，自动打开它
   if (!isInsightPanelExpanded.value) {
     toggleInsightPanel()
   }
 
   // 恢复选中状态
-  selectedText.value = item.selected_text
+  selectedText.value = conversation.selected_text
 
   // 恢复上下文
-  const contextBefore = item.context_before || ''
-  const contextAfter = item.context_after || ''
-  context.value = contextBefore + item.selected_text + contextAfter
+  const contextBefore = conversation.context_before || ''
+  const contextAfter = conversation.context_after || ''
+  context.value = contextBefore + conversation.selected_text + contextAfter
 
   // 恢复位置信息
-  selectedStart.value = item.selected_start
-  selectedEnd.value = item.selected_end
+  selectedStart.value = conversation.selected_start
+  selectedEnd.value = conversation.selected_end
 
-  // 显示历史洞察内容
-  currentInsight.value = item.insight
-  if (item.reasoning) {
-    currentReasoning.value = item.reasoning
+  // 加载对话历史到追问组件
+  const { conversationHistory, clearConversation } = useFollowUp()
+  clearConversation()
+
+  // 分离初始对话和追问对话
+  const messages = conversation.messages
+
+  // 第一条 assistant 消息是初始洞察
+  const initialAssistant = messages.find(m => m.role === 'assistant')
+
+  // ⚠️ 重要：必须先设置 currentRequest，再设置 currentInsight
+  // 因为设置 currentInsight 会触发组件更新，此时需要 currentRequest 已经就绪
+  currentRequest.value = {
+    selected_text: conversation.selected_text,
+    context: context.value,
+    intent: conversation.intent as Intent,
+    custom_question: conversation.question || undefined,  // ✅ 添加自定义问题
+    selected_start: conversation.selected_start ?? undefined,
+    selected_end: conversation.selected_end ?? undefined,
+    use_reasoning: !!initialAssistant?.reasoning
+  }
+
+  // 显示初始洞察到主洞察区
+  if (initialAssistant) {
+    currentInsight.value = initialAssistant.content
+    currentReasoning.value = initialAssistant.reasoning || ''
+  }
+
+  // 后续的消息（索引 >= 2）是追问对话，加载到 conversationHistory
+  const followUpMessages = messages.slice(2)  // 跳过前两条（初始 user + assistant）
+  if (followUpMessages.length > 0) {
+    conversationHistory.value = followUpMessages.map(msg => ({
+      role: msg.role,
+      content: msg.content,
+      reasoning: msg.reasoning,
+      timestamp: new Date(msg.timestamp).getTime(),
+      insight_id: msg.insight_id  // 重要：保留 insight_id
+    }))
+    console.log('🔄 已恢复完整对话（', followUpMessages.length, '条追问消息）')
+  } else {
+    console.log('🔄 这是初始洞察，没有追问记录')
   }
 
   // 关闭洞察详情弹窗
-  selectHistoryItem(null)
+  selectConversation(null)
 
-  // 显示意图按钮，允许继续提问
-  showIntentButtons.value = true
+  // 切换到洞察标签页
+  activeTab.value = 'insight'
 
-  console.log('🔄 已恢复选中状态，可以继续提问')
+  console.log('🔄 已恢复对话，可以继续提问')
 }
 
 // 处理查看暂存项
@@ -588,9 +658,7 @@ const handlePreferencesUpdated = (preferences: AnalysisPreferences) => {
 
 // 切换AI洞察面板
 const toggleInsightPanel = () => {
-  if (readerLayoutRef.value) {
-    readerLayoutRef.value.togglePanel()
-  }
+  // 直接切换全局状态，ReaderLayout 会自动响应
   isInsightPanelExpanded.value = !isInsightPanelExpanded.value
 }
 
@@ -603,7 +671,7 @@ const handleToggleReplay = () => {
   if (!containerEl) return
 
   if (isReplayMode.value) {
-    renderHistoryHighlights(containerEl, insightHistory.value)
+    renderHistoryHighlights(containerEl, insightConversations.value)
   } else {
     removeHistoryHighlights(containerEl)
   }
@@ -649,8 +717,8 @@ useHead({
 watch(() => currentArticleId.value, async (articleId) => {
   if (articleId) {
     await loadInsightHistory(articleId)
-    if (insightHistory.value.length > 0) {
-      console.log(`📚 文章 ${articleId} 有 ${insightHistory.value.length} 条历史洞察`)
+    if (insightConversations.value.length > 0) {
+      console.log(`📚 文章 ${articleId} 有 ${insightConversations.value.length} 个对话链`)
     }
   } else {
     // 清空历史记录

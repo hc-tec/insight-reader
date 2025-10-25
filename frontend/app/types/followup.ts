@@ -5,7 +5,9 @@
 export interface Message {
   role: 'user' | 'assistant'
   content: string
+  reasoning?: string
   timestamp?: number
+  insight_id?: number | null  // 对应数据库中的洞察记录 ID（用户消息为 null，assistant 消息有值）
 }
 
 export interface FollowUpButton {
